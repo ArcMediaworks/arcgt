@@ -1,15 +1,36 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 type DashboardData = {
   success: boolean;
+
   dashboard: any;
   health: any;
+
   account: any;
+
+  broker_account?: {
+    available: boolean;
+    source?: string;
+    currency?: string;
+
+    balance?: number | null;
+    equity?: number | null;
+    margin?: number | null;
+    free_margin?: number | null;
+
+    updated_at?: string | null;
+  } | null;
+
   open_position: any;
   performance: any;
   readiness: any;
+
   recent_signals: any[];
   recent_risk_decisions: any[];
   closed_trades: any[];
@@ -172,8 +193,10 @@ export default function Home() {
   const [controlBusy, setControlBusy] =
     useState(false);
 
-  const [controlMessage, setControlMessage] =
-    useState('');
+  const [
+    controlMessage,
+    setControlMessage,
+  ] = useState('');
 
   const loadDashboard = async () => {
     try {
@@ -250,9 +273,7 @@ export default function Home() {
         const json = await res.json();
 
         if (json.success) {
-          setStrategyPerformance(
-            json
-          );
+          setStrategyPerformance(json);
         }
       } catch (error) {
         console.error(
@@ -356,7 +377,7 @@ export default function Home() {
 
   const resumeTrading = async () => {
     const confirmed = window.confirm(
-      'Resume ARCGT trading in PAPER mode?'
+      'Resume ARCGT trading in DEMO mode?'
     );
 
     if (!confirmed) {
@@ -427,7 +448,12 @@ export default function Home() {
   const dashboard = data?.dashboard;
   const health = data?.health;
   const account = data?.account;
-  const performance = data?.performance;
+  const brokerAccount =
+    data?.broker_account ?? null;
+
+  const performance =
+    data?.performance;
+
   const readiness = data?.readiness;
 
   const signal = dashboard?.signal;
@@ -451,6 +477,38 @@ export default function Home() {
 
   const newsLock =
     tradingStatus?.news_lock === true;
+
+  const brokerAccountAvailable =
+    brokerAccount?.available === true;
+
+  const displayedBalance =
+    brokerAccountAvailable &&
+    brokerAccount?.balance != null
+      ? Number(brokerAccount.balance)
+      : Number(account?.balance ?? 0);
+
+  const displayedEquity =
+    brokerAccountAvailable &&
+    brokerAccount?.equity != null
+      ? Number(brokerAccount.equity)
+      : Number(account?.equity ?? 0);
+
+  const displayedMargin =
+    brokerAccountAvailable &&
+    brokerAccount?.margin != null
+      ? Number(brokerAccount.margin)
+      : null;
+
+  const displayedFreeMargin =
+    brokerAccountAvailable &&
+    brokerAccount?.free_margin != null
+      ? Number(brokerAccount.free_margin)
+      : null;
+
+  const accountCurrency =
+    brokerAccount?.currency ??
+    account?.currency ??
+    'USD';
 
   return (
     <main className="min-h-screen bg-[#070707] text-white p-6">
@@ -518,7 +576,7 @@ export default function Home() {
 
               <span className="text-xs px-3 py-1.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
                 MODE:{' '}
-                {control?.mode ?? 'PAPER'}
+                {control?.mode ?? 'DEMO'}
               </span>
 
               <span
@@ -597,7 +655,7 @@ export default function Home() {
                   label="Mode"
                   value={
                     control?.mode ??
-                    'PAPER'
+                    'DEMO'
                   }
                   status="warning"
                 />
@@ -866,13 +924,35 @@ export default function Home() {
           />
 
           <Card
-            title="Account Equity"
-            value={`$${Number(
-              account?.equity ?? 0
-            ).toLocaleString()}`}
-            sub={`Balance $${Number(
-              account?.balance ?? 0
-            ).toLocaleString()}`}
+            title={
+              brokerAccountAvailable
+                ? 'Broker Equity'
+                : 'ARCGT Equity'
+            }
+            value={`${accountCurrency} ${displayedEquity.toLocaleString(
+              undefined,
+              {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              }
+            )}`}
+            sub={
+              brokerAccountAvailable
+                ? `Broker Balance ${accountCurrency} ${displayedBalance.toLocaleString(
+                    undefined,
+                    {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }
+                  )}`
+                : `System Balance ${accountCurrency} ${displayedBalance.toLocaleString(
+                    undefined,
+                    {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }
+                  )}`
+            }
           />
 
           <Card
@@ -885,6 +965,114 @@ export default function Home() {
             )}
             sub={`${account?.daily_pnl_percent ?? 0}%`}
           />
+
+        </section>
+
+        {/* BROKER ACCOUNT */}
+
+        <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
+
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
+
+            <div>
+
+              <p className="text-xs uppercase tracking-widest text-neutral-500">
+                Account
+              </p>
+
+              <h2 className="text-xl font-semibold mt-2">
+                Broker Account
+              </h2>
+
+            </div>
+
+            <span
+              className={`text-xs px-3 py-1.5 rounded border w-fit ${
+                brokerAccountAvailable
+                  ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                  : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+              }`}
+            >
+              {brokerAccountAvailable
+                ? 'BROKER DATA'
+                : 'ARCGT CALCULATED DATA'}
+            </span>
+
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+            <Metric
+              label={
+                brokerAccountAvailable
+                  ? 'Broker Balance'
+                  : 'System Balance'
+              }
+              value={`${accountCurrency} ${displayedBalance.toLocaleString(
+                undefined,
+                {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }
+              )}`}
+            />
+
+            <Metric
+              label={
+                brokerAccountAvailable
+                  ? 'Broker Equity'
+                  : 'System Equity'
+              }
+              value={`${accountCurrency} ${displayedEquity.toLocaleString(
+                undefined,
+                {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }
+              )}`}
+            />
+
+            <Metric
+              label="Margin"
+              value={
+                displayedMargin != null
+                  ? `${accountCurrency} ${displayedMargin.toLocaleString(
+                      undefined,
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }
+                    )}`
+                  : 'Unavailable'
+              }
+            />
+
+            <Metric
+              label="Free Margin"
+              value={
+                displayedFreeMargin != null
+                  ? `${accountCurrency} ${displayedFreeMargin.toLocaleString(
+                      undefined,
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }
+                    )}`
+                  : 'Unavailable'
+              }
+            />
+
+          </div>
+
+          {!brokerAccountAvailable && (
+            <p className="text-xs text-neutral-500 mt-4">
+              Broker balance data is not yet
+              available. ARCGT is currently
+              displaying its calculated account
+              state until direct cTrader account
+              data is connected.
+            </p>
+          )}
 
         </section>
 
@@ -916,9 +1104,7 @@ export default function Home() {
                 </p>
 
                 <p className="text-3xl font-semibold">
-                  {signal?.confidence ??
-                    0}
-                  %
+                  {signal?.confidence ?? 0}%
                 </p>
 
               </div>
@@ -1044,9 +1230,7 @@ export default function Home() {
 
               <Timeframe
                 label="15M"
-                value={
-                  market?.state_15m
-                }
+                value={market?.state_15m}
               />
 
               <Timeframe
@@ -1075,18 +1259,16 @@ export default function Home() {
           <Card
             title="Total Trades"
             value={
-              performance?.total_trades ??
-              0
+              performance?.total_trades ?? 0
             }
-            sub="Paper performance"
+            sub="DEMO performance"
           />
 
           <Card
             title="Net P&L"
             value={formatMoney(
               Number(
-                performance?.net_pnl ??
-                  0
+                performance?.net_pnl ?? 0
               ),
               false
             )}
@@ -1128,7 +1310,7 @@ export default function Home() {
 
             <span className="text-xs px-3 py-1.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 w-fit">
               {analytics?.mode ??
-                'PAPER'}{' '}
+                'DEMO'}{' '}
               DATA
             </span>
 
@@ -1295,8 +1477,7 @@ export default function Home() {
                   label="Current Streak"
                   value={`${
                     analytics?.streaks
-                      ?.current_streak ??
-                    0
+                      ?.current_streak ?? 0
                   } ${
                     analytics?.streaks
                       ?.current_streak_type ??
@@ -1319,8 +1500,7 @@ export default function Home() {
                   label="Best Win Streak"
                   value={
                     analytics?.streaks
-                      ?.best_win_streak ??
-                    0
+                      ?.best_win_streak ?? 0
                   }
                   status="good"
                 />
@@ -1329,8 +1509,7 @@ export default function Home() {
                   label="Worst Loss Streak"
                   value={
                     analytics?.streaks
-                      ?.worst_loss_streak ??
-                    0
+                      ?.worst_loss_streak ?? 0
                   }
                   status={
                     Number(
@@ -1367,7 +1546,7 @@ export default function Home() {
 
         </section>
 
-        {/* PAPER TO LIVE READINESS */}
+        {/* DEMO TO LIVE READINESS */}
 
         <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
 
@@ -1380,7 +1559,7 @@ export default function Home() {
               </p>
 
               <h2 className="text-xl font-semibold mt-2">
-                Paper → Live Readiness
+                DEMO → Live Readiness
               </h2>
 
             </div>
@@ -1579,8 +1758,7 @@ export default function Home() {
             <ReadinessMetric
               label="Drawdown"
               score={
-                readiness?.drawdown_score ??
-                0
+                readiness?.drawdown_score ?? 0
               }
               max={20}
             />
@@ -1648,7 +1826,7 @@ export default function Home() {
             <Metric
               label="Mode"
               value={
-                readiness?.mode ?? 'PAPER'
+                readiness?.mode ?? 'DEMO'
               }
             />
 
@@ -1694,7 +1872,7 @@ export default function Home() {
 
               <span className="text-xs px-3 py-1.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
                 {strategyPerformance?.mode ??
-                  'PAPER'}{' '}
+                  'DEMO'}{' '}
                 DATA
               </span>
 
@@ -1723,8 +1901,7 @@ export default function Home() {
                   value={
                     strategyPerformance
                       ?.summary
-                      ?.strategy_count ??
-                    0
+                      ?.strategy_count ?? 0
                   }
                 />
 
@@ -1828,16 +2005,14 @@ export default function Home() {
                         <Metric
                           label="Wins"
                           value={
-                            strategy.wins ??
-                            0
+                            strategy.wins ?? 0
                           }
                         />
 
                         <Metric
                           label="Losses"
                           value={
-                            strategy.losses ??
-                            0
+                            strategy.losses ?? 0
                           }
                         />
 
@@ -1982,7 +2157,7 @@ export default function Home() {
 
             <EmptyState
               title="No strategy performance yet."
-              description="Strategy analytics will appear after ARCGT closes paper trades."
+              description="Strategy analytics will appear after ARCGT closes DEMO trades."
             />
 
           )}
@@ -2043,7 +2218,7 @@ export default function Home() {
           ) : (
             <EmptyState
               title="No equity history yet."
-              description="The curve will populate as ARCGT closes paper trades."
+              description="The curve will populate as ARCGT closes DEMO trades."
             />
           )}
 
@@ -2062,7 +2237,7 @@ export default function Home() {
               </p>
 
               <h2 className="text-xl font-semibold mt-2">
-                Closed Paper Trades
+                Closed DEMO Trades
               </h2>
 
             </div>
@@ -2235,7 +2410,7 @@ export default function Home() {
           ) : (
             <EmptyState
               title="No closed trades yet."
-              description="Closed ARCGT paper trades will appear here automatically."
+              description="Closed ARCGT DEMO trades will appear here automatically."
             />
           )}
 
@@ -2374,7 +2549,7 @@ export default function Home() {
               </p>
 
               <h2 className="text-xl font-semibold mt-2">
-                Current Paper Position
+                Current DEMO Position
               </h2>
 
             </div>
@@ -2463,7 +2638,7 @@ export default function Home() {
             </div>
           ) : (
             <EmptyState
-              title="No active paper position."
+              title="No active DEMO position."
               description="ARCGT is waiting for an approved BUY or SELL setup."
             />
           )}
@@ -2486,8 +2661,7 @@ export default function Home() {
 
             <div className="space-y-3">
 
-              {data?.recent_signals
-                ?.length ? (
+              {data?.recent_signals?.length ? (
                 data.recent_signals
                   .slice(0, 6)
                   .map(
@@ -2654,8 +2828,7 @@ export default function Home() {
                   ))
               ) : (
                 <p className="text-sm text-neutral-500">
-                  No recent risk
-                  decisions.
+                  No recent risk decisions.
                 </p>
               )}
 
@@ -2780,8 +2953,10 @@ function EditableRiskMetric({
   disabled: boolean;
   onSave: (value: number) => void;
 }) {
-  const [currentValue, setCurrentValue] =
-    useState(value);
+  const [
+    currentValue,
+    setCurrentValue,
+  ] = useState(value);
 
   useEffect(() => {
     setCurrentValue(value);
@@ -3321,16 +3496,13 @@ function EquityCurveChart({
             strokeWidth="1"
           />
 
-          {chart.points.length >
-            1 && (
+          {chart.points.length > 1 && (
             <polyline
               fill="none"
               stroke="currentColor"
               className="text-yellow-400"
               strokeWidth="3"
-              points={
-                chart.polyline
-              }
+              points={chart.polyline}
             />
           )}
 
@@ -3344,8 +3516,7 @@ function EquityCurveChart({
                   r="6"
                   fill="currentColor"
                   className={
-                    point.realized_pnl >=
-                    0
+                    point.realized_pnl >= 0
                       ? 'text-green-400'
                       : 'text-red-400'
                   }
