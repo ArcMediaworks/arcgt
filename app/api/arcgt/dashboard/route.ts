@@ -3,12 +3,31 @@ import { arcgtSupabase } from '@/lib/arcgt-supabase';
 
 export const dynamic = 'force-dynamic';
 
+const BROKER_ACCOUNT_MAX_AGE_MS = 30_000;
+
+function numberOrNull(value: unknown) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
+}
+
 export async function GET() {
   try {
     const [
       dashboardResult,
       healthResult,
       accountResult,
+      brokerAccountResult,
       positionResult,
       performanceResult,
       signalsResult,
@@ -38,11 +57,23 @@ export async function GET() {
         .limit(1)
         .maybeSingle(),
 
-      // ARCGT calculated account state
+      // ARCGT internally calculated account state
       arcgtSupabase
         .from('account_state')
         .select('*')
         .eq('account_id', 'main')
+        .limit(1)
+        .maybeSingle(),
+
+      // Actual Fusion Markets cTrader DEMO account
+      arcgtSupabase
+        .from('broker_account_state')
+        .select('*')
+        .eq('broker', 'Fusion Markets')
+        .eq('environment', 'DEMO')
+        .order('updated_at', {
+          ascending: false,
+        })
         .limit(1)
         .maybeSingle(),
 
@@ -90,11 +121,7 @@ export async function GET() {
         })
         .limit(10),
 
-      // Closed ARCGT trades
-      //
-      // Keep both PAPER + DEMO here for now because
-      // account_state currently contains the historical
-      // accumulated ARCGT performance from both phases.
+      // Historical PAPER + DEMO trades
       arcgtSupabase
         .from('open_positions')
         .select('*')
@@ -105,12 +132,7 @@ export async function GET() {
           ascending: true,
         }),
 
-      // Latest readiness snapshot.
-      //
-      // Do not hard-code PAPER here anymore.
-      // Return the newest readiness calculation regardless
-      // of mode until the readiness workflow is converted
-      // fully to DEMO.
+      // Latest readiness snapshot
       arcgtSupabase
         .from('readiness_snapshots')
         .select('*')
@@ -126,6 +148,7 @@ export async function GET() {
       dashboardResult.error,
       healthResult.error,
       accountResult.error,
+      brokerAccountResult.error,
       positionResult.error,
       performanceResult.error,
       signalsResult.error,
@@ -143,57 +166,179 @@ export async function GET() {
     const closedTrades =
       closedTradesResult.data ?? [];
 
-    /*
-     * --------------------------------------------------
-     * BROKER ACCOUNT
-     * --------------------------------------------------
-     *
-     * IMPORTANT:
-     *
-     * account_state is currently ARCGT's internally
-     * calculated account state.
-     *
-     * It must NOT be presented as the real Fusion /
-     * cTrader broker account.
-     *
-     * Once the broker bridge can retrieve the actual
-     * cTrader account balance/equity/margin, we will
-     * synchronize those values into Supabase and switch
-     * this object to available: true.
-     */
+    // ==================================================
+    // ACTUAL BROKER ACCOUNT
+    // ==================================================
+
+    const brokerRow =
+      brokerAccountResult.data;
+
+    const brokerUpdatedAt =
+      brokerRow?.updated_at ??
+      brokerRow?.broker_updated_at ??
+      null;
+
+    const brokerUpdatedMs =
+      brokerUpdatedAt
+        ? new Date(
+            brokerUpdatedAt
+          ).getTime()
+        : Number.NaN;
+
+    const brokerAgeMs =
+      Number.isFinite(brokerUpdatedMs)
+        ? Date.now() - brokerUpdatedMs
+        : null;
+
+    const brokerFresh =
+      brokerAgeMs !== null &&
+      brokerAgeMs >= 0 &&
+      brokerAgeMs <=
+        BROKER_ACCOUNT_MAX_AGE_MS;
+
+    const brokerConnected =
+      brokerRow?.connected === true;
+
+    const brokerAuthorized =
+      brokerRow?.app_authorized === true &&
+      brokerRow?.account_authorized === true;
+
+    const brokerSourceAvailable =
+      brokerRow?.available === true;
+
+    const brokerDataComplete =
+      numberOrNull(
+        brokerRow?.balance
+      ) !== null &&
+      numberOrNull(
+        brokerRow?.equity
+      ) !== null &&
+      numberOrNull(
+        brokerRow?.margin
+      ) !== null &&
+      numberOrNull(
+        brokerRow?.free_margin
+      ) !== null;
+
+    const brokerAvailable =
+      Boolean(brokerRow) &&
+      brokerFresh &&
+      brokerConnected &&
+      brokerAuthorized &&
+      brokerSourceAvailable &&
+      brokerDataComplete;
 
     const brokerAccount = {
-      available: false,
+      available:
+        brokerAvailable,
 
-      source: null,
+      fresh:
+        brokerFresh,
+
+      source:
+        brokerRow?.source ??
+        null,
+
+      broker:
+        brokerRow?.broker ??
+        null,
+
+      environment:
+        brokerRow?.environment ??
+        null,
+
+      account_id:
+        brokerRow?.account_id ??
+        null,
+
+      trader_login:
+        brokerRow?.trader_login ??
+        null,
 
       currency:
+        brokerRow?.currency ??
         accountResult.data?.currency ??
         'USD',
 
-      balance: null,
-      equity: null,
-      margin: null,
-      free_margin: null,
+      balance:
+        brokerAvailable
+          ? numberOrNull(
+              brokerRow?.balance
+            )
+          : null,
 
-      updated_at: null,
+      equity:
+        brokerAvailable
+          ? numberOrNull(
+              brokerRow?.equity
+            )
+          : null,
+
+      margin:
+        brokerAvailable
+          ? numberOrNull(
+              brokerRow?.margin
+            )
+          : null,
+
+      free_margin:
+        brokerAvailable
+          ? numberOrNull(
+              brokerRow?.free_margin
+            )
+          : null,
+
+      unrealized_pnl:
+        brokerAvailable
+          ? numberOrNull(
+              brokerRow?.unrealized_pnl
+            )
+          : null,
+
+      connected:
+        brokerConnected,
+
+      app_authorized:
+        brokerRow?.app_authorized ===
+        true,
+
+      account_authorized:
+        brokerRow?.account_authorized ===
+        true,
+
+      broker_available:
+        brokerSourceAvailable,
+
+      stale:
+        Boolean(brokerRow) &&
+        !brokerFresh,
+
+      age_ms:
+        brokerAgeMs,
+
+      broker_updated_at:
+        brokerRow?.broker_updated_at ??
+        null,
+
+      updated_at:
+        brokerUpdatedAt,
     };
 
-    /*
-     * --------------------------------------------------
-     * EQUITY / P&L CURVE
-     * --------------------------------------------------
-     */
+    // ==================================================
+    // EQUITY / P&L CURVE
+    // ==================================================
 
     let cumulativePnl = 0;
 
     const equityCurve =
       closedTrades.map((trade) => {
-        const realizedPnl = Number(
-          trade.realized_pnl ?? 0
-        );
+        const realizedPnl =
+          Number(
+            trade.realized_pnl ?? 0
+          );
 
-        cumulativePnl += realizedPnl;
+        cumulativePnl +=
+          realizedPnl;
 
         return {
           timestamp:
@@ -201,38 +346,35 @@ export async function GET() {
             trade.settled_at ??
             null,
 
-          realized_pnl: realizedPnl,
+          realized_pnl:
+            realizedPnl,
 
-          cumulative_pnl: Number(
-            cumulativePnl.toFixed(2)
-          ),
+          cumulative_pnl:
+            Number(
+              cumulativePnl.toFixed(2)
+            ),
         };
       });
 
     return NextResponse.json({
-      success: errors.length === 0,
+      success:
+        errors.length === 0,
 
       dashboard:
-        dashboardResult.data?.payload ??
+        dashboardResult.data
+          ?.payload ??
         null,
 
       health:
         healthResult.data ??
         null,
 
-      /*
-       * Existing internally calculated ARCGT account.
-       */
+      // ARCGT internal calculated account
       account:
         accountResult.data ??
         null,
 
-      /*
-       * Real broker-account interface.
-       *
-       * The frontend already knows how to prefer this
-       * object automatically once available === true.
-       */
+      // Actual Fusion Markets cTrader DEMO account
       broker_account:
         brokerAccount,
 
@@ -284,12 +426,32 @@ export async function GET() {
 
         broker_account: {
           available: false,
+          fresh: false,
+
           source: null,
+          broker: null,
+          environment: null,
+
+          account_id: null,
+          trader_login: null,
+
           currency: 'USD',
+
           balance: null,
           equity: null,
           margin: null,
           free_margin: null,
+          unrealized_pnl: null,
+
+          connected: false,
+          app_authorized: false,
+          account_authorized: false,
+          broker_available: false,
+
+          stale: true,
+          age_ms: null,
+
+          broker_updated_at: null,
           updated_at: null,
         },
 
