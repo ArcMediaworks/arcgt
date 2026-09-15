@@ -118,8 +118,14 @@ function calculateDrawdown(
     curve.push({
       timestamp:
         trade.closed_at,
-      equity,
-      drawdown,
+      equity:
+        Number(
+          equity.toFixed(2)
+        ),
+      drawdown:
+        Number(
+          drawdown.toFixed(2)
+        ),
     });
   }
 
@@ -211,8 +217,7 @@ function calculateSideStats(
     filtered.filter(
       trade =>
         Number(
-          trade.realized_pnl ??
-            0
+          trade.realized_pnl ?? 0
         ) > 0
     );
 
@@ -220,8 +225,7 @@ function calculateSideStats(
     filtered.filter(
       trade =>
         Number(
-          trade.realized_pnl ??
-            0
+          trade.realized_pnl ?? 0
         ) < 0
     );
 
@@ -231,10 +235,13 @@ function calculateSideStats(
   return {
     trades:
       filtered.length,
+
     wins:
       wins.length,
+
     losses:
       losses.length,
+
     win_rate:
       filtered.length
         ? Number(
@@ -245,6 +252,7 @@ function calculateSideStats(
             ).toFixed(2)
           )
         : 0,
+
     net_pnl:
       Number(
         pnl.toFixed(2)
@@ -277,9 +285,12 @@ export async function GET() {
         'symbol',
         'XAUUSD'
       )
+      // DEMO BROKER TRADES ONLY.
+      // PAPER trades remain stored historically,
+      // but are excluded from broker analytics.
       .eq(
         'mode',
-        'PAPER'
+        'DEMO'
       )
       .eq(
         'status',
@@ -479,7 +490,10 @@ export async function GET() {
         'XAUUSD',
 
       mode:
-        'PAPER',
+        'DEMO',
+
+      source:
+        'FUSION_MARKETS_CTRADER_DEMO',
 
       overview: {
         total_trades:
@@ -648,9 +662,12 @@ export async function GET() {
       {
         success: false,
 
+        mode:
+          'DEMO',
+
         error:
           error?.message ??
-          'Failed to calculate analytics',
+          'Failed to calculate DEMO analytics',
       },
       {
         status: 500,

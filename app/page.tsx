@@ -28,7 +28,20 @@ type DashboardData = {
   } | null;
 
   open_position: any;
+
   performance: any;
+
+  demo_performance?: {
+    mode: string;
+    source: string;
+    total_trades: number;
+    winning_trades: number;
+    losing_trades: number;
+    win_rate: number;
+    net_pnl: number;
+    average_trade: number;
+  };
+
   readiness: any;
 
   recent_signals: any[];
@@ -451,8 +464,10 @@ export default function Home() {
   const brokerAccount =
     data?.broker_account ?? null;
 
+  // Authoritative DEMO broker performance.
+  // Do not use legacy PAPER performance snapshots here.
   const performance =
-    data?.performance;
+    data?.demo_performance;
 
   const readiness = data?.readiness;
 
@@ -1251,8 +1266,8 @@ export default function Home() {
           <Card
             title="Win Rate"
             value={`${performance?.win_rate ?? 0}%`}
-            sub={`${performance?.wins ?? 0} wins / ${
-              performance?.losses ?? 0
+            sub={`${performance?.winning_trades ?? 0} wins / ${
+              performance?.losing_trades ?? 0
             } losses`}
           />
 
@@ -1272,10 +1287,7 @@ export default function Home() {
               ),
               false
             )}
-            sub={`Profit Factor ${
-              performance?.profit_factor ??
-              0
-            }`}
+            sub="Closed DEMO broker trades only" 
           />
 
           <Card

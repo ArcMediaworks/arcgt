@@ -3,54 +3,300 @@ import { arcgtSupabase } from '@/lib/arcgt-supabase';
 
 export const dynamic = 'force-dynamic';
 
+type ClosedDemoTrade = {
+  id: string;
+  signal_id: string | null;
+  side: string | null;
+  realized_pnl: number | string | null;
+  closed_at: string | null;
+};
+
+type SignalRow = {
+  id: string;
+  strategy: string | null;
+};
+
+function round2(value: number) {
+  return Number(value.toFixed(2));
+}
+
 export async function GET() {
   try {
-    const { data, error } =
+    /*
+     * Authoritative source:
+     *
+     * open_positions
+     *   -> mode = DEMO
+     *   -> status = CLOSED
+     *   -> realized_pnl
+     *
+     * Strategy attribution:
+     *
+     * open_positions.signal_id
+     *   -> signals.id
+     *   -> signals.strategy
+     *
+     * PAPER trades and legacy strategy snapshots
+     * are intentionally excluded.
+     */
+
+    const { data: tradeData, error: tradeError } =
       await arcgtSupabase
-        .from('strategy_performance_snapshots')
-        .select('*')
+        .from('open_positions')
+        .select(
+          'id, signal_id, side, realized_pnl, closed_at'
+        )
         .eq('symbol', 'XAUUSD')
-        .eq('mode', 'PAPER')
-        .order('created_at', {
-          ascending: false,
+        .eq('mode', 'DEMO')
+        .eq('status', 'CLOSED')
+        .not('realized_pnl', 'is', null)
+        .order('closed_at', {
+          ascending: true,
         });
 
-    if (error) {
-      throw error;
+    if (tradeError) {
+      throw tradeError;
     }
 
-    const rows = data ?? [];
+    const trades =
+      (tradeData ?? []) as ClosedDemoTrade[];
 
-    const latestByStrategy = new Map<
+    const signalIds = Array.from(
+      new Set(
+        trades
+          .map((trade) => trade.signal_id)
+          .filter(
+            (id): id is string =>
+              typeof id === 'string' &&
+              id.length > 0
+          )
+      )
+    );
+
+    let signals: SignalRow[] = [];
+
+    if (signalIds.length > 0) {
+      const {
+        data: signalData,
+        error: signalError,
+      } = await arcgtSupabase
+        .from('signals')
+        .select('id, strategy')
+        .in('id', signalIds);
+
+      if (signalError) {
+        throw signalError;
+      }
+
+      signals =
+        (signalData ?? []) as SignalRow[];
+    }
+
+    const strategyBySignalId =
+      new Map<string, string>();
+
+    for (const signal of signals) {
+      strategyBySignalId.set(
+        signal.id,
+        signal.strategy?.trim() ||
+          'unknown'
+      );
+    }
+
+    const grouped = new Map<
       string,
-      any
+      ClosedDemoTrade[]
     >();
 
-    for (const row of rows) {
+    for (const trade of trades) {
       const strategy =
-        row.strategy || 'unknown';
+        trade.signal_id
+          ? strategyBySignalId.get(
+              trade.signal_id
+            ) ?? 'unknown'
+          : 'unknown';
 
-      if (!latestByStrategy.has(strategy)) {
-        latestByStrategy.set(
-          strategy,
-          row
-        );
-      }
+      const existing =
+        grouped.get(strategy) ?? [];
+
+      existing.push(trade);
+
+      grouped.set(strategy, existing);
     }
 
     const strategies = Array.from(
-      latestByStrategy.values()
-    ).sort(
+      grouped.entries()
+    ).map(([strategy, strategyTrades]) => {
+      const pnls = strategyTrades.map(
+        (trade) =>
+          Number(trade.realized_pnl ?? 0)
+      );
+
+      const wins = pnls.filter(
+        (pnl) => pnl > 0
+      );
+
+      const losses = pnls.filter(
+        (pnl) => pnl < 0
+      );
+
+      const breakeven = pnls.filter(
+        (pnl) => pnl === 0
+      ).length;
+
+      const totalTrades = pnls.length;
+
+      const grossProfit = wins.reduce(
+        (sum, pnl) => sum + pnl,
+        0
+      );
+
+      const grossLoss = Math.abs(
+        losses.reduce(
+          (sum, pnl) => sum + pnl,
+          0
+        )
+      );
+
+      const netPnl = pnls.reduce(
+        (sum, pnl) => sum + pnl,
+        0
+      );
+
+      const averageTrade =
+        totalTrades > 0
+          ? netPnl / totalTrades
+          : 0;
+
+      const averageWin =
+        wins.length > 0
+          ? grossProfit / wins.length
+          : 0;
+
+      const averageLoss =
+        losses.length > 0
+          ? -(
+              grossLoss /
+              losses.length
+            )
+          : 0;
+
+      const winRate =
+        totalTrades > 0
+          ? (wins.length /
+              totalTrades) *
+            100
+          : 0;
+
+      const expectancy =
+        totalTrades > 0
+          ? netPnl / totalTrades
+          : 0;
+
+      const profitFactor =
+        grossLoss > 0
+          ? grossProfit / grossLoss
+          : grossProfit > 0
+            ? null
+            : 0;
+
+      const bestTrade =
+        pnls.length > 0
+          ? Math.max(...pnls)
+          : 0;
+
+      const worstTrade =
+        pnls.length > 0
+          ? Math.min(...pnls)
+          : 0;
+
+      const latestClosedAt =
+        strategyTrades
+          .map(
+            (trade) =>
+              trade.closed_at
+          )
+          .filter(
+            (
+              value
+            ): value is string =>
+              Boolean(value)
+          )
+          .sort()
+          .at(-1) ?? null;
+
+      return {
+        id: `demo-${strategy}`,
+
+        symbol: 'XAUUSD',
+        mode: 'DEMO',
+
+        strategy,
+
+        total_trades: totalTrades,
+
+        wins: wins.length,
+        losses: losses.length,
+        breakeven,
+
+        win_rate:
+          round2(winRate),
+
+        gross_profit:
+          round2(grossProfit),
+
+        gross_loss:
+          round2(grossLoss),
+
+        net_pnl:
+          round2(netPnl),
+
+        average_trade:
+          round2(averageTrade),
+
+        average_win:
+          round2(averageWin),
+
+        average_loss:
+          round2(averageLoss),
+
+        expectancy:
+          round2(expectancy),
+
+        profit_factor:
+          profitFactor == null
+            ? null
+            : round2(
+                profitFactor
+              ),
+
+        best_trade:
+          round2(bestTrade),
+
+        worst_trade:
+          round2(worstTrade),
+
+        created_at:
+          latestClosedAt ??
+          new Date().toISOString(),
+
+        paper_trades: 0,
+        demo_trades: totalTrades,
+      };
+    });
+
+    strategies.sort(
       (a, b) =>
-        Number(b.net_pnl ?? 0) -
-        Number(a.net_pnl ?? 0)
+        b.net_pnl - a.net_pnl
     );
 
     const totalNetPnl =
       strategies.reduce(
-        (sum, row) =>
+        (sum, strategy) =>
           sum +
-          Number(row.net_pnl ?? 0),
+          Number(
+            strategy.net_pnl ?? 0
+          ),
         0
       );
 
@@ -58,7 +304,11 @@ export async function GET() {
       success: true,
 
       symbol: 'XAUUSD',
-      mode: 'PAPER',
+
+      mode: 'DEMO',
+
+      source:
+        'CLOSED_DEMO_BROKER_TRADES',
 
       strategies,
 
@@ -66,10 +316,11 @@ export async function GET() {
         strategy_count:
           strategies.length,
 
+        total_trades:
+          trades.length,
+
         total_net_pnl:
-          Number(
-            totalNetPnl.toFixed(2)
-          ),
+          round2(totalNetPnl),
 
         best_strategy:
           strategies[0]?.strategy ??
@@ -85,20 +336,28 @@ export async function GET() {
     });
   } catch (error: any) {
     console.error(
-      'ARCGT strategy performance error:',
+      'ARCGT DEMO strategy performance error:',
       error
     );
 
     return NextResponse.json(
       {
         success: false,
+
         symbol: 'XAUUSD',
-        mode: 'PAPER',
+
+        mode: 'DEMO',
+
+        source:
+          'CLOSED_DEMO_BROKER_TRADES',
+
         strategies: [],
+
         summary: null,
+
         error:
           error?.message ??
-          'Failed to load strategy performance',
+          'Failed to load DEMO strategy performance',
       },
       {
         status: 500,

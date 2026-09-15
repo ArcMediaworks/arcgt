@@ -33,7 +33,7 @@ export async function GET() {
       signalsResult,
       riskResult,
       closedTradesResult,
-      readinessResult,
+
     ] = await Promise.all([
       // Latest dashboard snapshot
       arcgtSupabase
@@ -121,27 +121,20 @@ export async function GET() {
         })
         .limit(10),
 
-      // Historical PAPER + DEMO trades
+      // CLOSED DEMO broker trades ONLY.
+      // PAPER history remains in Supabase but must not
+      // contaminate DEMO dashboard performance.
       arcgtSupabase
         .from('open_positions')
         .select('*')
         .eq('symbol', 'XAUUSD')
-        .in('mode', ['PAPER', 'DEMO'])
+        .eq('mode', 'DEMO')
         .eq('status', 'CLOSED')
         .order('closed_at', {
           ascending: true,
         }),
 
-      // Latest readiness snapshot
-      arcgtSupabase
-        .from('readiness_snapshots')
-        .select('*')
-        .eq('symbol', 'XAUUSD')
-        .order('created_at', {
-          ascending: false,
-        })
-        .limit(1)
-        .maybeSingle(),
+
     ]);
 
     const errors = [
@@ -154,7 +147,7 @@ export async function GET() {
       signalsResult.error,
       riskResult.error,
       closedTradesResult.error,
-      readinessResult.error,
+
     ]
       .filter(Boolean)
       .map(
@@ -165,6 +158,333 @@ export async function GET() {
 
     const closedTrades =
       closedTradesResult.data ?? [];
+
+    /*
+     * DEMO READINESS
+     *
+     * Authoritative source:
+     * open_positions
+     *   symbol = XAUUSD
+     *   mode = DEMO
+     *   status = CLOSED
+     *
+     * PAPER trades and legacy readiness snapshots are
+     * intentionally excluded.
+     */
+
+    const demoPnls = closedTrades.map(
+      (trade: any) =>
+        Number(trade.realized_pnl ?? 0)
+    );
+
+    const readinessTotalTrades =
+      demoPnls.length;
+
+    const readinessWins =
+      demoPnls.filter(
+        (pnl: number) => pnl > 0
+      ).length;
+
+    const readinessLosses =
+      demoPnls.filter(
+        (pnl: number) => pnl < 0
+      ).length;
+
+    const readinessWinRate =
+      readinessTotalTrades > 0
+        ? (readinessWins / readinessTotalTrades) * 100
+        : 0;
+
+    const readinessNetPnl =
+      demoPnls.reduce(
+        (sum: number, pnl: number) =>
+          sum + pnl,
+        0
+      );
+
+    const readinessGrossProfit =
+      demoPnls
+        .filter(
+          (pnl: number) => pnl > 0
+        )
+        .reduce(
+          (
+            sum: number,
+            pnl: number
+          ) => sum + pnl,
+          0
+        );
+
+    const readinessGrossLoss =
+      Math.abs(
+        demoPnls
+          .filter(
+            (pnl: number) => pnl < 0
+          )
+          .reduce(
+            (
+              sum: number,
+              pnl: number
+            ) => sum + pnl,
+            0
+          )
+      );
+
+    const readinessProfitFactor =
+      readinessGrossLoss > 0
+        ? readinessGrossProfit /
+          readinessGrossLoss
+        : readinessGrossProfit > 0
+          ? null
+          : 0;
+
+    const readinessExpectancy =
+      readinessTotalTrades > 0
+        ? readinessNetPnl /
+          readinessTotalTrades
+        : 0;
+
+    let readinessPeak = 0;
+    let readinessCumulative = 0;
+    let readinessMaxDrawdown = 0;
+
+    for (const pnl of demoPnls) {
+      readinessCumulative += pnl;
+
+      if (readinessCumulative > readinessPeak) {
+        readinessPeak = readinessCumulative;
+      }
+
+      const drawdown =
+        readinessPeak - readinessCumulative;
+
+      if (
+        drawdown >
+        readinessMaxDrawdown
+      ) {
+        readinessMaxDrawdown =
+          drawdown;
+      }
+    }
+
+    let currentLossStreak = 0;
+
+    for (
+      let i = demoPnls.length - 1;
+      i >= 0;
+      i--
+    ) {
+      if (demoPnls[i] < 0) {
+        currentLossStreak++;
+      } else {
+        break;
+      }
+    }
+
+    /*
+     * READINESS SCORE
+     *
+     * Trade Count:    30 points
+     * Profitability:  30 points
+     * Drawdown:       20 points
+     * Consistency:    20 points
+     *
+     * 50 DEMO trades = full trade-count score.
+     * Minimum 30 DEMO trades required for live review.
+     */
+
+    const tradeCountScore =
+      Math.min(
+        30,
+        Math.floor(
+          (readinessTotalTrades / 50) *
+            30
+        )
+      );
+
+    let profitabilityScore = 0;
+
+    if (readinessTotalTrades > 0) {
+      if (
+        readinessNetPnl > 0 &&
+        readinessWinRate >= 50
+      ) {
+        profitabilityScore = 30;
+      } else if (
+        readinessNetPnl > 0
+      ) {
+        profitabilityScore = 20;
+      } else if (
+        readinessNetPnl === 0
+      ) {
+        profitabilityScore = 10;
+      }
+    }
+
+    let drawdownScore = 20;
+
+    if (readinessMaxDrawdown > 0) {
+      const drawdownVsProfit =
+        readinessGrossProfit > 0
+          ? readinessMaxDrawdown /
+            readinessGrossProfit
+          : 1;
+
+      if (
+        drawdownVsProfit <= 0.25
+      ) {
+        drawdownScore = 20;
+      } else if (
+        drawdownVsProfit <= 0.5
+      ) {
+        drawdownScore = 15;
+      } else if (
+        drawdownVsProfit <= 1
+      ) {
+        drawdownScore = 10;
+      } else {
+        drawdownScore = 0;
+      }
+    }
+
+    let consistencyScore = 0;
+
+    if (readinessTotalTrades > 0) {
+      if (
+        readinessWinRate >= 60 &&
+        currentLossStreak <= 2
+      ) {
+        consistencyScore = 20;
+      } else if (
+        readinessWinRate >= 50 &&
+        currentLossStreak <= 3
+      ) {
+        consistencyScore = 15;
+      } else if (
+        currentLossStreak <= 3
+      ) {
+        consistencyScore = 10;
+      } else {
+        consistencyScore = 0;
+      }
+    }
+
+    const readinessScore =
+      tradeCountScore +
+      profitabilityScore +
+      drawdownScore +
+      consistencyScore;
+
+    const readinessReasons: string[] =
+      [];
+
+    if (readinessTotalTrades < 30) {
+      readinessReasons.push(
+        `Need at least 30 closed DEMO trades before live review. Current: ${readinessTotalTrades}.`
+      );
+    }
+
+    if (readinessNetPnl <= 0) {
+      readinessReasons.push(
+        'DEMO net P&L must be positive.'
+      );
+    }
+
+    if (readinessWinRate < 50) {
+      readinessReasons.push(
+        'DEMO win rate is below 50%.'
+      );
+    }
+
+    if (currentLossStreak > 3) {
+      readinessReasons.push(
+        'Current DEMO losing streak exceeds 3 trades.'
+      );
+    }
+
+    if (readinessScore < 70) {
+      readinessReasons.push(
+        `Readiness score must reach at least 70/100. Current: ${readinessScore}/100.`
+      );
+    }
+
+    const readinessStatus =
+      readinessTotalTrades >= 30 &&
+      readinessNetPnl > 0 &&
+      readinessWinRate >= 50 &&
+      currentLossStreak <= 3 &&
+      readinessScore >= 70
+        ? 'READY_FOR_LIVE_REVIEW'
+        : 'NOT_READY';
+
+    const demoReadiness = {
+      symbol: 'XAUUSD',
+      mode: 'DEMO',
+      source:
+        'CLOSED_DEMO_BROKER_TRADES',
+
+      total_trades:
+        readinessTotalTrades,
+
+      wins:
+        readinessWins,
+
+      losses:
+        readinessLosses,
+
+      win_rate:
+        Number(
+          readinessWinRate.toFixed(2)
+        ),
+
+      profit_factor:
+        readinessProfitFactor == null
+          ? null
+          : Number(
+              readinessProfitFactor.toFixed(
+                2
+              )
+            ),
+
+      expectancy:
+        Number(
+          readinessExpectancy.toFixed(2)
+        ),
+
+      net_pnl:
+        Number(
+          readinessNetPnl.toFixed(2)
+        ),
+
+      max_drawdown:
+        Number(
+          readinessMaxDrawdown.toFixed(2)
+        ),
+
+      current_loss_streak:
+        currentLossStreak,
+
+      trade_count_score:
+        tradeCountScore,
+
+      profitability_score:
+        profitabilityScore,
+
+      drawdown_score:
+        drawdownScore,
+
+      consistency_score:
+        consistencyScore,
+
+      readiness_score:
+        readinessScore,
+
+      readiness_status:
+        readinessStatus,
+
+      reasons:
+        readinessReasons,
+    };
 
     // ==================================================
     // ACTUAL BROKER ACCOUNT
@@ -228,6 +548,13 @@ export async function GET() {
       brokerSourceAvailable &&
       brokerDataComplete;
 
+    const brokerUnrealizedPnl =
+      brokerAvailable
+        ? numberOrNull(
+            brokerRow?.unrealized_pnl
+          )
+        : null;
+
     const brokerAccount = {
       available:
         brokerAvailable,
@@ -289,11 +616,7 @@ export async function GET() {
           : null,
 
       unrealized_pnl:
-        brokerAvailable
-          ? numberOrNull(
-              brokerRow?.unrealized_pnl
-            )
-          : null,
+        brokerUnrealizedPnl,
 
       connected:
         brokerConnected,
@@ -325,7 +648,26 @@ export async function GET() {
     };
 
     // ==================================================
-    // EQUITY / P&L CURVE
+    // CURRENT DEMO POSITION
+    // ==================================================
+
+    const rawOpenPosition =
+      positionResult.data ?? null;
+
+    // There is currently a maximum of one DEMO position.
+    // Attach the actual broker floating P&L to that position.
+    const openPosition =
+      rawOpenPosition
+        ? {
+            ...rawOpenPosition,
+
+            unrealized_pnl:
+              brokerUnrealizedPnl,
+          }
+        : null;
+
+    // ==================================================
+    // DEMO EQUITY / REALIZED P&L CURVE
     // ==================================================
 
     let cumulativePnl = 0;
@@ -356,6 +698,78 @@ export async function GET() {
         };
       });
 
+    // ==================================================
+    // DEMO CLOSED-TRADE SUMMARY
+    // ==================================================
+
+    const demoNetPnl =
+      Number(
+        cumulativePnl.toFixed(2)
+      );
+
+    const demoTotalTrades =
+      closedTrades.length;
+
+    const demoWinningTrades =
+      closedTrades.filter(
+        (trade) =>
+          Number(
+            trade.realized_pnl ?? 0
+          ) > 0
+      ).length;
+
+    const demoLosingTrades =
+      closedTrades.filter(
+        (trade) =>
+          Number(
+            trade.realized_pnl ?? 0
+          ) < 0
+      ).length;
+
+    const demoWinRate =
+      demoTotalTrades > 0
+        ? Number(
+            (
+              (demoWinningTrades /
+                demoTotalTrades) *
+              100
+            ).toFixed(2)
+          )
+        : 0;
+
+    const demoAverageTrade =
+      demoTotalTrades > 0
+        ? Number(
+            (
+              demoNetPnl /
+              demoTotalTrades
+            ).toFixed(2)
+          )
+        : 0;
+
+    const demoPerformance = {
+      mode: 'DEMO',
+      source: 'open_positions',
+
+      total_trades:
+        demoTotalTrades,
+
+      winning_trades:
+        demoWinningTrades,
+
+      losing_trades:
+        demoLosingTrades,
+
+      win_rate:
+        demoWinRate,
+
+      net_pnl:
+        demoNetPnl,
+
+      average_trade:
+        demoAverageTrade,
+    };
+
     return NextResponse.json({
       success:
         errors.length === 0,
@@ -378,17 +792,23 @@ export async function GET() {
       broker_account:
         brokerAccount,
 
+      // Current DEMO position with broker floating P&L
       open_position:
-        positionResult.data ??
-        null,
+        openPosition,
 
+      // Legacy snapshot retained for compatibility.
+      // Do not treat it as authoritative DEMO performance.
       performance:
         performanceResult.data ??
         null,
 
+      // Authoritative closed DEMO trade statistics.
+      demo_performance:
+        demoPerformance,
+
+      // Authoritative DEMO-only readiness.
       readiness:
-        readinessResult.data ??
-        null,
+        demoReadiness,
 
       recent_signals:
         signalsResult.data ??
@@ -398,9 +818,11 @@ export async function GET() {
         riskResult.data ??
         [],
 
+      // DEMO ONLY
       closed_trades:
         closedTrades,
 
+      // DEMO ONLY
       equity_curve:
         equityCurve,
 
@@ -456,11 +878,24 @@ export async function GET() {
         },
 
         open_position: null,
+
         performance: null,
+        demo_performance: {
+          mode: 'DEMO',
+          source: 'open_positions',
+          total_trades: 0,
+          winning_trades: 0,
+          losing_trades: 0,
+          win_rate: 0,
+          net_pnl: 0,
+          average_trade: 0,
+        },
+
         readiness: null,
 
         recent_signals: [],
         recent_risk_decisions: [],
+
         closed_trades: [],
         equity_curve: [],
 
