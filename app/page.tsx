@@ -8,27 +8,22 @@ import {
 
 type DashboardData = {
   success: boolean;
-
   dashboard: any;
   health: any;
-
   account: any;
 
   broker_account?: {
     available: boolean;
     source?: string;
     currency?: string;
-
     balance?: number | null;
     equity?: number | null;
     margin?: number | null;
     free_margin?: number | null;
-
     updated_at?: string | null;
   } | null;
 
   open_position: any;
-
   performance: any;
 
   demo_performance?: {
@@ -91,12 +86,10 @@ type AnalyticsData = {
       trades: number;
       pnl: number;
     };
-
     week: {
       trades: number;
       pnl: number;
     };
-
     month: {
       trades: number;
       pnl: number;
@@ -118,7 +111,6 @@ type AnalyticsData = {
       win_rate: number;
       net_pnl: number;
     };
-
     sell: {
       trades: number;
       wins: number;
@@ -147,28 +139,21 @@ type StrategyPerformanceData = {
     symbol: string;
     mode: string;
     strategy: string;
-
     total_trades: number;
     wins: number;
     losses: number;
     breakeven: number;
-
     win_rate: number;
-
     gross_profit: number;
     gross_loss: number;
     net_pnl: number;
-
     average_trade: number;
     average_win: number;
     average_loss: number;
-
     expectancy: number;
     profit_factor: number | null;
-
     best_trade: number;
     worst_trade: number;
-
     created_at: string;
   }[];
 
@@ -211,6 +196,10 @@ export default function Home() {
     setControlMessage,
   ] = useState('');
 
+  const [now, setNow] = useState(
+    Date.now()
+  );
+
   const loadDashboard = async () => {
     try {
       const res = await fetch(
@@ -221,7 +210,6 @@ export default function Home() {
       );
 
       const json = await res.json();
-
       setData(json);
     } catch (error) {
       console.error(
@@ -241,7 +229,6 @@ export default function Home() {
       );
 
       const json = await res.json();
-
       setControl(json);
     } catch (error) {
       console.error(
@@ -319,8 +306,17 @@ export default function Home() {
       loadStrategyPerformance();
     }, 15000);
 
-    return () =>
+    const clockInterval = setInterval(
+      () => {
+        setNow(Date.now());
+      },
+      1000
+    );
+
+    return () => {
       clearInterval(interval);
+      clearInterval(clockInterval);
+    };
   }, []);
 
   const updateControl = async (
@@ -334,12 +330,10 @@ export default function Home() {
         '/api/arcgt/control',
         {
           method: 'PATCH',
-
           headers: {
             'Content-Type':
               'application/json',
           },
-
           body: JSON.stringify(updates),
         }
       );
@@ -378,9 +372,7 @@ export default function Home() {
       'Pause ARCGT trading? New trades will be blocked until you resume.'
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     await updateControl({
       trading_enabled: false,
@@ -393,9 +385,7 @@ export default function Home() {
       'Resume ARCGT trading in DEMO mode?'
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     await updateControl({
       trading_enabled: true,
@@ -415,17 +405,13 @@ export default function Home() {
         : 'Enable the manual news lock? New trades should be blocked while the lock is active.'
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     await updateControl({
       news_lock: !current,
-
       lock_reason: !current
         ? 'MANUAL_NEWS_LOCK'
         : null,
-
       lock_until: null,
     });
   };
@@ -441,9 +427,7 @@ export default function Home() {
       )} to ${value}?`
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     await updateControl({
       [field]: value,
@@ -461,11 +445,10 @@ export default function Home() {
   const dashboard = data?.dashboard;
   const health = data?.health;
   const account = data?.account;
+
   const brokerAccount =
     data?.broker_account ?? null;
 
-  // Authoritative DEMO broker performance.
-  // Do not use legacy PAPER performance snapshots here.
   const performance =
     data?.demo_performance;
 
@@ -517,13 +500,214 @@ export default function Home() {
   const displayedFreeMargin =
     brokerAccountAvailable &&
     brokerAccount?.free_margin != null
-      ? Number(brokerAccount.free_margin)
+      ? Number(
+          brokerAccount.free_margin
+        )
       : null;
 
   const accountCurrency =
     brokerAccount?.currency ??
     account?.currency ??
     'USD';
+
+  /*
+   * Technical Analysis V2.1
+   *
+   * The dashboard API may expose these
+   * directly on market or under a nested
+   * technical snapshot. We support both
+   * without inventing values.
+   */
+  const technical =
+    market?.technical_snapshot ??
+    market?.technical ??
+    dashboard?.technical_snapshot ??
+    dashboard?.technical ??
+    market ??
+    {};
+
+  const marketRegime =
+    technical?.market_regime ??
+    market?.market_regime ??
+    'UNAVAILABLE';
+
+  const setupReady =
+    booleanOrNull(
+      technical?.setup_ready ??
+        market?.setup_ready
+    );
+
+  const triggerConfirmed =
+    booleanOrNull(
+      technical?.trigger_confirmed ??
+        market?.trigger_confirmed
+    );
+
+  const structurallyActionable =
+    booleanOrNull(
+      technical?.structurally_actionable ??
+        market?.structurally_actionable
+    );
+
+  const primaryDirection =
+    technical?.primary_direction ??
+    market?.primary_direction ??
+    '—';
+
+  const setupState =
+    technical?.setup_state ??
+    market?.setup_state ??
+    '—';
+
+  const triggerState =
+    technical?.trigger_state ??
+    market?.trigger_state ??
+    '—';
+
+  const bestStrategy =
+    technical?.best_strategy ??
+    market?.best_strategy ??
+    '—';
+
+  const bestDirection =
+    technical?.best_direction ??
+    market?.best_direction ??
+    '—';
+
+  const bestSetupQuality =
+    firstDefined(
+      technical?.best_setup_quality,
+      market?.best_setup_quality
+    );
+
+  const minimumTechnicalScore =
+    firstDefined(
+      technical?.minimum_technical_score,
+      market?.minimum_technical_score
+    );
+
+  const technicallyQualified =
+    booleanOrNull(
+      technical?.technically_qualified ??
+        market?.technically_qualified
+    );
+
+  const directionalConflict =
+    booleanOrNull(
+      technical?.directional_conflict ??
+        market?.directional_conflict
+    );
+
+  const priceLocation =
+    technical?.price_location ??
+    market?.price_location ??
+    {};
+
+  const priceZone =
+    firstDefined(
+      priceLocation?.zone,
+      technical?.price_zone,
+      market?.price_zone
+    );
+
+  const dealingRangeLow =
+    firstDefined(
+      priceLocation?.dealing_range_low,
+      priceLocation?.range_low,
+      technical?.dealing_range_low,
+      market?.dealing_range_low
+    );
+
+  const dealingRangeHigh =
+    firstDefined(
+      priceLocation?.dealing_range_high,
+      priceLocation?.range_high,
+      technical?.dealing_range_high,
+      market?.dealing_range_high
+    );
+
+  const dealingRangePercent =
+    firstDefined(
+      priceLocation?.position_percent,
+      priceLocation?.range_position_percent,
+      technical?.dealing_range_percent,
+      market?.dealing_range_percent
+    );
+
+  const liquiditySweep =
+    technical?.liquidity_sweep ??
+    market?.liquidity_sweep ??
+    null;
+
+  const orderBlock =
+    technical?.active_order_block ??
+    technical?.order_block ??
+    market?.active_order_block ??
+    market?.order_block ??
+    null;
+
+  const fairValueGap =
+    technical?.active_fvg ??
+    technical?.fvg ??
+    technical?.fair_value_gap ??
+    market?.active_fvg ??
+    market?.fvg ??
+    market?.fair_value_gap ??
+    null;
+
+  const analysisVersion =
+    technical?.analysis_version ??
+    market?.analysis_version ??
+    '—';
+
+  /*
+   * Trade Duration Manager
+   */
+  const openPosition =
+    data?.open_position ?? null;
+
+  const liveDurationMinutes =
+    openPosition?.opened_at
+      ? Math.max(
+          0,
+          Math.floor(
+            (now -
+              new Date(
+                openPosition.opened_at
+              ).getTime()) /
+              60000
+          )
+        )
+      : null;
+
+  const durationStage =
+    liveDurationMinutes == null
+      ? 'NO_POSITION'
+      : liveDurationMinutes < 30
+      ? 'NORMAL'
+      : liveDurationMinutes < 60
+      ? 'REASSESSMENT_WINDOW'
+      : 'TIME_LIMIT';
+
+  const managementExitPending =
+    openPosition
+      ?.management_exit_pending === true;
+
+  const managementExitSource =
+    openPosition
+      ?.management_exit_source ?? null;
+
+  const managementExitReason =
+    openPosition
+      ?.management_exit_reason ?? null;
+
+  const managementExitAt =
+    openPosition?.management_exit_at ??
+    null;
+
+  const managementExitData =
+    openPosition
+      ?.management_exit_data ?? null;
 
   return (
     <main className="min-h-screen bg-[#070707] text-white p-6">
@@ -532,9 +716,7 @@ export default function Home() {
         {/* HEADER */}
 
         <header className="flex items-center justify-between border-b border-[#262626] pb-5">
-
           <div>
-
             <h1 className="text-3xl font-bold tracking-tight">
               ARCGT
             </h1>
@@ -543,11 +725,9 @@ export default function Home() {
               Automated Gold Trading
               Command Center
             </p>
-
           </div>
 
           <div className="flex items-center gap-3">
-
             <span
               className={`w-2.5 h-2.5 rounded-full ${
                 dashboard?.system_status ===
@@ -564,19 +744,14 @@ export default function Home() {
               {dashboard?.system_status ??
                 'UNKNOWN'}
             </span>
-
           </div>
-
         </header>
 
         {/* CONTROL CENTER */}
 
         <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
           <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 mb-6">
-
             <div>
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 ARCGT Control Center
               </p>
@@ -584,11 +759,9 @@ export default function Home() {
               <h2 className="text-xl font-semibold mt-2">
                 Trading & Risk Controls
               </h2>
-
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-
               <span className="text-xs px-3 py-1.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
                 MODE:{' '}
                 {control?.mode ?? 'DEMO'}
@@ -617,17 +790,11 @@ export default function Home() {
                 NEWS LOCK{' '}
                 {newsLock ? 'ON' : 'OFF'}
               </span>
-
             </div>
-
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-
-            {/* OPERATIONS */}
-
             <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-5">
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Operations
               </p>
@@ -637,7 +804,6 @@ export default function Home() {
               </h3>
 
               <div className="space-y-3">
-
                 <ControlRow
                   label="Trading"
                   value={
@@ -669,8 +835,7 @@ export default function Home() {
                 <ControlRow
                   label="Mode"
                   value={
-                    control?.mode ??
-                    'DEMO'
+                    control?.mode ?? 'DEMO'
                   }
                   status="warning"
                 />
@@ -682,11 +847,9 @@ export default function Home() {
                     'NONE'
                   }
                 />
-
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-5">
-
                 {tradingEnabled ? (
                   <button
                     onClick={pauseTrading}
@@ -714,19 +877,12 @@ export default function Home() {
                     ? 'Disable News Lock'
                     : 'Enable News Lock'}
                 </button>
-
               </div>
-
             </div>
 
-            {/* RISK SETTINGS */}
-
             <div className="xl:col-span-2 bg-[#0a0a0a] border border-[#222] rounded-xl p-5">
-
               <div className="flex items-center justify-between mb-4">
-
                 <div>
-
                   <p className="text-xs uppercase tracking-widest text-neutral-500">
                     Risk Engine
                   </p>
@@ -734,7 +890,6 @@ export default function Home() {
                   <h3 className="text-lg font-semibold mt-2">
                     Active Risk Rules
                   </h3>
-
                 </div>
 
                 <span
@@ -748,11 +903,9 @@ export default function Home() {
                     ? 'ENABLED'
                     : 'DISABLED'}
                 </span>
-
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-
                 <EditableRiskMetric
                   label="Risk / Trade"
                   value={
@@ -794,8 +947,8 @@ export default function Home() {
                 <EditableRiskMetric
                   label="Max Positions"
                   value={
-                    riskSettings?.max_open_positions ??
-                    0
+                    riskSettings
+                      ?.max_open_positions ?? 0
                   }
                   min={1}
                   max={10}
@@ -831,8 +984,8 @@ export default function Home() {
                 <EditableRiskMetric
                   label="Minimum R:R"
                   value={
-                    riskSettings?.min_risk_reward ??
-                    0
+                    riskSettings
+                      ?.min_risk_reward ?? 0
                   }
                   prefix="1:"
                   min={1}
@@ -848,7 +1001,6 @@ export default function Home() {
                 />
 
                 <div className="bg-[#111] border border-[#252525] rounded-lg p-4">
-
                   <p className="text-xs text-neutral-500">
                     Lot Range
                   </p>
@@ -866,18 +1018,15 @@ export default function Home() {
                     {riskSettings?.lot_step ??
                       0.01}
                   </p>
-
                 </div>
-
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
-
                 <Metric
                   label="Contract Size"
                   value={
-                    riskSettings?.contract_size ??
-                    '—'
+                    riskSettings
+                      ?.contract_size ?? '—'
                   }
                 />
 
@@ -899,11 +1048,8 @@ export default function Home() {
                       : '—'
                   }
                 />
-
               </div>
-
             </div>
-
           </div>
 
           {controlMessage && (
@@ -911,13 +1057,11 @@ export default function Home() {
               {controlMessage}
             </div>
           )}
-
         </section>
 
         {/* TOP CARDS */}
 
         <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-
           <Card
             title="XAU/USD"
             value={
@@ -980,17 +1124,13 @@ export default function Home() {
             )}
             sub={`${account?.daily_pnl_percent ?? 0}%`}
           />
-
         </section>
 
         {/* BROKER ACCOUNT */}
 
         <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
-
             <div>
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Account
               </p>
@@ -998,7 +1138,6 @@ export default function Home() {
               <h2 className="text-xl font-semibold mt-2">
                 Broker Account
               </h2>
-
             </div>
 
             <span
@@ -1012,11 +1151,9 @@ export default function Home() {
                 ? 'BROKER DATA'
                 : 'ARCGT CALCULATED DATA'}
             </span>
-
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-
             <Metric
               label={
                 brokerAccountAvailable
@@ -1076,31 +1213,15 @@ export default function Home() {
                   : 'Unavailable'
               }
             />
-
           </div>
-
-          {!brokerAccountAvailable && (
-            <p className="text-xs text-neutral-500 mt-4">
-              Broker balance data is not yet
-              available. ARCGT is currently
-              displaying its calculated account
-              state until direct cTrader account
-              data is connected.
-            </p>
-          )}
-
         </section>
 
         {/* CURRENT SIGNAL */}
 
         <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-
           <div className="xl:col-span-2 bg-[#101010] border border-[#252525] rounded-xl p-5">
-
             <div className="flex justify-between items-center mb-5">
-
               <div>
-
                 <p className="text-xs uppercase text-neutral-500 tracking-widest">
                   Current AI Signal
                 </p>
@@ -1109,11 +1230,9 @@ export default function Home() {
                   {signal?.decision ??
                     'NO SIGNAL'}
                 </h2>
-
               </div>
 
               <div className="text-right">
-
                 <p className="text-sm text-neutral-500">
                   Confidence
                 </p>
@@ -1121,13 +1240,10 @@ export default function Home() {
                 <p className="text-3xl font-semibold">
                   {signal?.confidence ?? 0}%
                 </p>
-
               </div>
-
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-
               <Metric
                 label="Strategy"
                 value={
@@ -1160,11 +1276,9 @@ export default function Home() {
                     : 'REJECTED'
                 }
               />
-
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-4">
-
               <Metric
                 label="Entry Min"
                 value={
@@ -1201,11 +1315,9 @@ export default function Home() {
                   '—'
                 }
               />
-
             </div>
 
             <div className="mt-5 border-t border-[#252525] pt-4">
-
               <p className="text-xs uppercase tracking-wider text-neutral-500 mb-2">
                 AI Reasoning
               </p>
@@ -1214,15 +1326,10 @@ export default function Home() {
                 {signal?.reasoning ??
                   'No reasoning available.'}
               </p>
-
             </div>
-
           </div>
 
-          {/* MARKET STRUCTURE */}
-
           <div className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
             <p className="text-xs uppercase tracking-widest text-neutral-500">
               Market Structure
             </p>
@@ -1232,37 +1339,570 @@ export default function Home() {
             </h2>
 
             <div className="space-y-3">
-
               <Timeframe
                 label="4H"
-                value={market?.state_4h}
+                value={
+                  market?.state_4h ??
+                  technical?.trend_4h
+                }
               />
 
               <Timeframe
                 label="1H"
-                value={market?.state_1h}
+                value={
+                  market?.state_1h ??
+                  technical?.trend_1h
+                }
               />
 
               <Timeframe
                 label="15M"
-                value={market?.state_15m}
+                value={
+                  market?.state_15m ??
+                  technical?.condition_15m
+                }
               />
 
               <Timeframe
                 label="5M"
-                value={market?.state_5m}
+                value={
+                  market?.state_5m ??
+                  technical?.condition_5m
+                }
               />
+            </div>
+          </div>
+        </section>
 
+        {/* TECHNICAL ANALYSIS V2.1 */}
+
+        <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 mb-6">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-neutral-500">
+                Technical Engine
+              </p>
+
+              <h2 className="text-xl font-semibold mt-2">
+                Technical Analysis V2.1
+              </h2>
             </div>
 
+            <div className="flex flex-wrap gap-2">
+              <StatusBadge
+                value={marketRegime}
+              />
+
+              <span className="text-xs px-3 py-1.5 rounded border border-[#333] bg-neutral-500/10 text-neutral-400">
+                {analysisVersion}
+              </span>
+            </div>
           </div>
 
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+            <Metric
+              label="Market Regime"
+              value={formatReason(
+                marketRegime
+              )}
+            />
+
+            <Metric
+              label="Primary Direction"
+              value={formatReason(
+                primaryDirection
+              )}
+            />
+
+            <BooleanMetric
+              label="Setup Ready"
+              value={setupReady}
+            />
+
+            <BooleanMetric
+              label="Trigger Confirmed"
+              value={triggerConfirmed}
+            />
+
+            <BooleanMetric
+              label="Structurally Actionable"
+              value={
+                structurallyActionable
+              }
+            />
+
+            <BooleanMetric
+              label="Technically Qualified"
+              value={technicallyQualified}
+            />
+
+            <BooleanMetric
+              label="Directional Conflict"
+              value={directionalConflict}
+              invertGood
+            />
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3 mt-4">
+            <Metric
+              label="Setup State"
+              value={formatReason(
+                setupState
+              )}
+            />
+
+            <Metric
+              label="Trigger State"
+              value={formatReason(
+                triggerState
+              )}
+            />
+
+            <Metric
+              label="Best Strategy"
+              value={formatStrategyName(
+                bestStrategy
+              )}
+            />
+
+            <Metric
+              label="Best Direction"
+              value={formatReason(
+                bestDirection
+              )}
+            />
+
+            <Metric
+              label="Setup Quality"
+              value={
+                bestSetupQuality != null
+                  ? `${bestSetupQuality}`
+                  : '—'
+              }
+            />
+
+            <Metric
+              label="Minimum Score"
+              value={
+                minimumTechnicalScore !=
+                null
+                  ? `${minimumTechnicalScore}`
+                  : '—'
+              }
+            />
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-4">
+            <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-5">
+              <p className="text-xs uppercase tracking-widest text-neutral-500">
+                Price Location
+              </p>
+
+              <h3 className="text-lg font-semibold mt-2 mb-4">
+                Dealing Range
+              </h3>
+
+              <div className="space-y-3">
+                <ControlRow
+                  label="Zone"
+                  value={
+                    priceZone
+                      ? formatReason(
+                          String(priceZone)
+                        )
+                      : '—'
+                  }
+                />
+
+                <ControlRow
+                  label="Range Low"
+                  value={
+                    dealingRangeLow ??
+                    '—'
+                  }
+                />
+
+                <ControlRow
+                  label="Range High"
+                  value={
+                    dealingRangeHigh ??
+                    '—'
+                  }
+                />
+
+                <ControlRow
+                  label="Current Position"
+                  value={
+                    dealingRangePercent !=
+                    null
+                      ? `${Number(
+                          dealingRangePercent
+                        ).toFixed(1)}%`
+                      : '—'
+                  }
+                />
+              </div>
+            </div>
+
+            <TechnicalObjectCard
+              title="Liquidity"
+              heading="Liquidity Sweep"
+              value={liquiditySweep}
+            />
+
+            <div className="space-y-4">
+              <TechnicalObjectCard
+                title="Institutional Structure"
+                heading="Active Order Block"
+                value={orderBlock}
+              />
+
+              <TechnicalObjectCard
+                title="Imbalance"
+                heading="Fair Value Gap"
+                value={fairValueGap}
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* POSITION MONITOR + DURATION MANAGER */}
+
+        <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-5">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-neutral-500">
+                Position Monitor
+              </p>
+
+              <h2 className="text-xl font-semibold mt-2">
+                Current DEMO Position
+              </h2>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <span
+                className={
+                  openPosition
+                    ? 'text-xs px-3 py-1.5 rounded bg-green-500/10 text-green-400 border border-green-500/20'
+                    : 'text-xs px-3 py-1.5 rounded bg-neutral-500/10 text-neutral-400 border border-[#333]'
+                }
+              >
+                {openPosition
+                  ? 'OPEN'
+                  : 'NO POSITION'}
+              </span>
+
+              {openPosition && (
+                <DurationBadge
+                  stage={durationStage}
+                />
+              )}
+
+              {managementExitPending && (
+                <span className="text-xs px-3 py-1.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                  EXIT PENDING
+                </span>
+              )}
+            </div>
+          </div>
+
+          {openPosition ? (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
+                <Metric
+                  label="Side"
+                  value={
+                    openPosition.side
+                  }
+                />
+
+                <Metric
+                  label="Lot Size"
+                  value={
+                    openPosition.lot_size
+                  }
+                />
+
+                <Metric
+                  label="Entry"
+                  value={
+                    openPosition.entry_price
+                  }
+                />
+
+                <Metric
+                  label="Stop Loss"
+                  value={
+                    openPosition.stop_loss
+                  }
+                />
+
+                <Metric
+                  label="Take Profit"
+                  value={
+                    openPosition.take_profit
+                  }
+                />
+
+                <Metric
+                  label="Unrealized P&L"
+                  value={formatMoney(
+                    Number(
+                      openPosition
+                        .unrealized_pnl ??
+                        0
+                    ),
+                    true
+                  )}
+                />
+
+                <Metric
+                  label="Opened"
+                  value={
+                    openPosition.opened_at
+                      ? new Date(
+                          openPosition.opened_at
+                        ).toLocaleString()
+                      : '—'
+                  }
+                />
+              </div>
+
+              <div className="mt-5 pt-5 border-t border-[#252525]">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-neutral-500">
+                      Trade Duration Manager
+                    </p>
+
+                    <h3 className="text-lg font-semibold mt-2">
+                      Exposure Management
+                    </h3>
+                  </div>
+
+                  <p className="text-xs text-neutral-500">
+                    0–29m Normal ·
+                    30–59m Reassessment ·
+                    60m Maximum Exposure
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3 mt-4">
+                  <Metric
+                    label="Elapsed Time"
+                    value={
+                      liveDurationMinutes !=
+                      null
+                        ? formatMinutes(
+                            liveDurationMinutes
+                          )
+                        : '—'
+                    }
+                  />
+
+                  <Metric
+                    label="Management Stage"
+                    value={formatReason(
+                      durationStage
+                    )}
+                  />
+
+                  <Metric
+                    label="Exit Pending"
+                    value={
+                      managementExitPending
+                        ? 'YES'
+                        : 'NO'
+                    }
+                  />
+
+                  <Metric
+                    label="Exit Source"
+                    value={
+                      managementExitSource
+                        ? formatReason(
+                            managementExitSource
+                          )
+                        : '—'
+                    }
+                  />
+
+                  <Metric
+                    label="Exit Reason"
+                    value={
+                      managementExitReason
+                        ? formatReason(
+                            managementExitReason
+                          )
+                        : '—'
+                    }
+                  />
+
+                  <Metric
+                    label="Exit Triggered"
+                    value={
+                      managementExitAt
+                        ? new Date(
+                            managementExitAt
+                          ).toLocaleString()
+                        : '—'
+                    }
+                  />
+                </div>
+
+                <DurationProgress
+                  minutes={
+                    liveDurationMinutes ?? 0
+                  }
+                />
+
+                {managementExitData && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3 mt-4">
+                    <Metric
+                      label="Trade State"
+                      value={
+                        managementExitData
+                          ?.trade_state
+                          ? formatReason(
+                              managementExitData
+                                .trade_state
+                            )
+                          : '—'
+                      }
+                    />
+
+                    <Metric
+                      label="Progress to TP"
+                      value={
+                        managementExitData
+                          ?.progress_percent !=
+                        null
+                          ? `${Number(
+                              managementExitData
+                                .progress_percent
+                            ).toFixed(1)}%`
+                          : '—'
+                      }
+                    />
+
+                    <Metric
+                      label="Current R"
+                      value={
+                        managementExitData
+                          ?.current_r != null
+                          ? Number(
+                              managementExitData
+                                .current_r
+                            ).toFixed(2)
+                          : '—'
+                      }
+                    />
+
+                    <Metric
+                      label="Estimated P&L"
+                      value={
+                        managementExitData
+                          ?.estimated_pnl_at_trigger !=
+                        null
+                          ? formatMoney(
+                              Number(
+                                managementExitData
+                                  .estimated_pnl_at_trigger
+                              ),
+                              true
+                            )
+                          : '—'
+                      }
+                    />
+
+                    <Metric
+                      label="AI Decision"
+                      value={
+                        managementExitData
+                          ?.ai_decision ??
+                        '—'
+                      }
+                    />
+
+                    <Metric
+                      label="AI Confidence"
+                      value={
+                        managementExitData
+                          ?.ai_confidence !=
+                        null
+                          ? `${managementExitData.ai_confidence}%`
+                          : '—'
+                      }
+                    />
+                  </div>
+                )}
+
+                {managementExitData
+                  ?.ai_thesis_status && (
+                  <div className="mt-4 border border-[#252525] bg-[#0a0a0a] rounded-xl p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-neutral-500">
+                          AI Thesis Status
+                        </p>
+
+                        <p className="text-sm font-semibold mt-2">
+                          {formatReason(
+                            managementExitData
+                              .ai_thesis_status
+                          )}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs uppercase tracking-widest text-neutral-500">
+                          AI Reassessment Reason
+                        </p>
+
+                        <p className="text-sm text-neutral-300 mt-2 leading-relaxed">
+                          {managementExitData
+                            ?.ai_reason ??
+                            '—'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {managementExitPending && (
+                  <div className="mt-4 border border-yellow-500/20 bg-yellow-500/5 rounded-xl p-4">
+                    <p className="text-sm text-yellow-300 font-medium">
+                      Management exit has
+                      been requested.
+                    </p>
+
+                    <p className="text-xs text-neutral-500 mt-2 leading-relaxed">
+                      This is the backend
+                      management state. The
+                      position remains shown as
+                      OPEN until broker
+                      settlement confirms the
+                      close and records the
+                      actual close price,
+                      realized P&L and closed
+                      timestamp.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <EmptyState
+              title="No active DEMO position."
+              description="ARCGT is waiting for an approved BUY or SELL setup."
+            />
+          )}
         </section>
 
         {/* PERFORMANCE */}
 
         <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-
           <Card
             title="Win Rate"
             value={`${performance?.win_rate ?? 0}%`}
@@ -1287,7 +1927,7 @@ export default function Home() {
               ),
               false
             )}
-            sub="Closed DEMO broker trades only" 
+            sub="Closed DEMO broker trades only"
           />
 
           <Card
@@ -1298,17 +1938,13 @@ export default function Home() {
             }
             sub="Backend health status"
           />
-
         </section>
 
-        {/* ADVANCED PERFORMANCE ANALYTICS */}
+        {/* ADVANCED ANALYTICS */}
 
         <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-
             <div>
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Advanced Analytics
               </p>
@@ -1317,19 +1953,15 @@ export default function Home() {
                 ARCGT Performance
                 Intelligence
               </h2>
-
             </div>
 
             <span className="text-xs px-3 py-1.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 w-fit">
-              {analytics?.mode ??
-                'DEMO'}{' '}
+              {analytics?.mode ?? 'DEMO'}{' '}
               DATA
             </span>
-
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
             <AnalyticsCard
               label="Today"
               value={formatMoney(
@@ -1339,10 +1971,7 @@ export default function Home() {
                 ),
                 true
               )}
-              sub={`${
-                analytics?.periods?.today
-                  ?.trades ?? 0
-              } trades`}
+              sub={`${analytics?.periods?.today?.trades ?? 0} trades`}
             />
 
             <AnalyticsCard
@@ -1354,10 +1983,7 @@ export default function Home() {
                 ),
                 true
               )}
-              sub={`${
-                analytics?.periods?.week
-                  ?.trades ?? 0
-              } trades`}
+              sub={`${analytics?.periods?.week?.trades ?? 0} trades`}
             />
 
             <AnalyticsCard
@@ -1369,16 +1995,11 @@ export default function Home() {
                 ),
                 true
               )}
-              sub={`${
-                analytics?.periods?.month
-                  ?.trades ?? 0
-              } trades`}
+              sub={`${analytics?.periods?.month?.trades ?? 0} trades`}
             />
-
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 mt-4">
-
             <Metric
               label="Average Trade"
               value={formatMoney(
@@ -1468,13 +2089,10 @@ export default function Home() {
                     ).toFixed(2)
               }
             />
-
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-4">
-
             <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-5">
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Streak Analysis
               </p>
@@ -1484,15 +2102,10 @@ export default function Home() {
               </h3>
 
               <div className="space-y-4">
-
                 <ControlRow
                   label="Current Streak"
-                  value={`${
-                    analytics?.streaks
-                      ?.current_streak ?? 0
-                  } ${
-                    analytics?.streaks
-                      ?.current_streak_type ??
+                  value={`${analytics?.streaks?.current_streak ?? 0} ${
+                    analytics?.streaks?.current_streak_type ??
                     'NONE'
                   }`}
                   status={
@@ -1521,7 +2134,8 @@ export default function Home() {
                   label="Worst Loss Streak"
                   value={
                     analytics?.streaks
-                      ?.worst_loss_streak ?? 0
+                      ?.worst_loss_streak ??
+                    0
                   }
                   status={
                     Number(
@@ -1533,9 +2147,7 @@ export default function Home() {
                       : undefined
                   }
                 />
-
               </div>
-
             </div>
 
             <SidePerformance
@@ -1553,19 +2165,14 @@ export default function Home() {
                   ?.side_performance?.sell
               }
             />
-
           </div>
-
         </section>
 
-        {/* DEMO TO LIVE READINESS */}
+        {/* READINESS */}
 
         <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-
             <div>
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Deployment Readiness
               </p>
@@ -1573,7 +2180,6 @@ export default function Home() {
               <h2 className="text-xl font-semibold mt-2">
                 DEMO → Live Readiness
               </h2>
-
             </div>
 
             <ReadinessStatusBadge
@@ -1582,19 +2188,15 @@ export default function Home() {
                 'UNKNOWN'
               }
             />
-
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-
             <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-5">
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Readiness Score
               </p>
 
               <div className="flex items-end gap-2 mt-4">
-
                 <span className="text-5xl font-bold">
                   {readiness?.readiness_score ??
                     0}
@@ -1603,16 +2205,13 @@ export default function Home() {
                 <span className="text-xl text-neutral-500 mb-1">
                   /100
                 </span>
-
               </div>
 
               <ProgressBar
-                value={
-                  Number(
-                    readiness?.readiness_score ??
-                      0
-                  )
-                }
+                value={Number(
+                  readiness?.readiness_score ??
+                    0
+                )}
                 max={100}
               />
 
@@ -1622,17 +2221,14 @@ export default function Home() {
                 consistency before live trading
                 is reviewed.
               </p>
-
             </div>
 
             <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-5">
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Validation Progress
               </p>
 
               <div className="flex items-end gap-2 mt-4">
-
                 <span className="text-4xl font-bold">
                   {readiness?.total_trades ??
                     0}
@@ -1641,16 +2237,13 @@ export default function Home() {
                 <span className="text-neutral-500 mb-1">
                   / 50 trades
                 </span>
-
               </div>
 
               <ProgressBar
-                value={
-                  Number(
-                    readiness?.total_trades ??
-                      0
-                  )
-                }
+                value={Number(
+                  readiness?.total_trades ??
+                    0
+                )}
                 max={50}
               />
 
@@ -1661,7 +2254,6 @@ export default function Home() {
               </p>
 
               <div className="grid grid-cols-3 gap-3 mt-5">
-
                 <MiniMetric
                   label="Wins"
                   value={
@@ -1678,17 +2270,12 @@ export default function Home() {
 
                 <MiniMetric
                   label="Win Rate"
-                  value={`${
-                    readiness?.win_rate ?? 0
-                  }%`}
+                  value={`${readiness?.win_rate ?? 0}%`}
                 />
-
               </div>
-
             </div>
 
             <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-5">
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Deployment Gate
               </p>
@@ -1707,7 +2294,6 @@ export default function Home() {
               </p>
 
               <div className="space-y-3 mt-5">
-
                 {readiness?.reasons?.length ? (
                   readiness.reasons.map(
                     (
@@ -1718,7 +2304,6 @@ export default function Home() {
                         key={index}
                         className="flex gap-3 items-start border border-[#252525] rounded-lg p-3"
                       >
-
                         <span className="text-yellow-400 mt-0.5">
                           ●
                         </span>
@@ -1726,29 +2311,22 @@ export default function Home() {
                         <p className="text-sm text-neutral-300 leading-relaxed">
                           {reason}
                         </p>
-
                       </div>
                     )
                   )
                 ) : (
                   <div className="border border-green-500/20 bg-green-500/5 rounded-lg p-3">
-
                     <p className="text-sm text-green-400">
                       All readiness requirements
                       passed.
                     </p>
-
                   </div>
                 )}
-
               </div>
-
             </div>
-
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
-
             <ReadinessMetric
               label="Trade Count"
               score={
@@ -1761,8 +2339,8 @@ export default function Home() {
             <ReadinessMetric
               label="Profitability"
               score={
-                readiness?.profitability_score ??
-                0
+                readiness
+                  ?.profitability_score ?? 0
               }
               max={30}
             />
@@ -1770,7 +2348,8 @@ export default function Home() {
             <ReadinessMetric
               label="Drawdown"
               score={
-                readiness?.drawdown_score ?? 0
+                readiness?.drawdown_score ??
+                0
               }
               max={20}
             />
@@ -1778,16 +2357,14 @@ export default function Home() {
             <ReadinessMetric
               label="Consistency"
               score={
-                readiness?.consistency_score ??
-                0
+                readiness
+                  ?.consistency_score ?? 0
               }
               max={20}
             />
-
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mt-5">
-
             <Metric
               label="Net P&L"
               value={formatMoney(
@@ -1830,8 +2407,8 @@ export default function Home() {
             <Metric
               label="Loss Streak"
               value={
-                readiness?.current_loss_streak ??
-                0
+                readiness
+                  ?.current_loss_streak ?? 0
               }
             />
 
@@ -1841,35 +2418,14 @@ export default function Home() {
                 readiness?.mode ?? 'DEMO'
               }
             />
-
           </div>
-
-          <div className="mt-5 pt-4 border-t border-[#252525] flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-
-            <p className="text-xs text-neutral-500">
-              Latest readiness evaluation
-            </p>
-
-            <p className="text-xs text-neutral-400">
-              {readiness?.created_at
-                ? new Date(
-                    readiness.created_at
-                  ).toLocaleString()
-                : 'No readiness snapshot yet'}
-            </p>
-
-          </div>
-
         </section>
 
         {/* STRATEGY PERFORMANCE */}
 
         <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
-
             <div>
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Strategy Analytics
               </p>
@@ -1877,11 +2433,9 @@ export default function Home() {
               <h2 className="text-xl font-semibold mt-2">
                 Strategy Performance
               </h2>
-
             </div>
 
             <div className="flex flex-wrap gap-2">
-
               <span className="text-xs px-3 py-1.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
                 {strategyPerformance?.mode ??
                   'DEMO'}{' '}
@@ -1889,25 +2443,18 @@ export default function Home() {
               </span>
 
               <span className="text-xs px-3 py-1.5 rounded bg-neutral-500/10 text-neutral-400 border border-[#333]">
-                {
-                  strategyPerformance
-                    ?.summary
-                    ?.strategy_count ?? 0
-                }{' '}
+                {strategyPerformance
+                  ?.summary
+                  ?.strategy_count ?? 0}{' '}
                 STRATEGIES
               </span>
-
             </div>
-
           </div>
 
           {strategyPerformance
             ?.strategies?.length ? (
-
             <>
-
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-
                 <Metric
                   label="Strategies Tracked"
                   value={
@@ -1919,13 +2466,11 @@ export default function Home() {
 
                 <Metric
                   label="Best Strategy"
-                  value={
-                    formatStrategyName(
-                      strategyPerformance
-                        ?.summary
-                        ?.best_strategy
-                    )
-                  }
+                  value={formatStrategyName(
+                    strategyPerformance
+                      ?.summary
+                      ?.best_strategy
+                  )}
                 />
 
                 <Metric
@@ -1940,23 +2485,17 @@ export default function Home() {
                     true
                   )}
                 />
-
               </div>
 
               <div className="space-y-4">
-
                 {strategyPerformance.strategies.map(
                   strategy => (
-
                     <div
                       key={strategy.id}
                       className="bg-[#0a0a0a] border border-[#222] rounded-xl p-5"
                     >
-
                       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-
                         <div>
-
                           <p className="text-xs uppercase tracking-widest text-neutral-500">
                             Strategy
                           </p>
@@ -1966,11 +2505,9 @@ export default function Home() {
                               strategy.strategy
                             )}
                           </h3>
-
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3">
-
                           <span
                             className={`text-xl font-semibold ${
                               Number(
@@ -1999,19 +2536,13 @@ export default function Home() {
                             }{' '}
                             trades
                           </span>
-
                         </div>
-
                       </div>
 
                       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3 mt-5">
-
                         <Metric
                           label="Win Rate"
-                          value={`${
-                            strategy.win_rate ??
-                            0
-                          }%`}
+                          value={`${strategy.win_rate ?? 0}%`}
                         />
 
                         <Metric
@@ -2083,107 +2614,25 @@ export default function Home() {
                             true
                           )}
                         />
-
                       </div>
-
-                      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3 mt-3">
-
-                        <Metric
-                          label="Gross Profit"
-                          value={formatMoney(
-                            Number(
-                              strategy.gross_profit ??
-                                0
-                            ),
-                            true
-                          )}
-                        />
-
-                        <Metric
-                          label="Gross Loss"
-                          value={formatMoney(
-                            -Number(
-                              strategy.gross_loss ??
-                                0
-                            ),
-                            false
-                          )}
-                        />
-
-                        <Metric
-                          label="Average Win"
-                          value={formatMoney(
-                            Number(
-                              strategy.average_win ??
-                                0
-                            ),
-                            true
-                          )}
-                        />
-
-                        <Metric
-                          label="Average Loss"
-                          value={formatMoney(
-                            -Number(
-                              strategy.average_loss ??
-                                0
-                            ),
-                            false
-                          )}
-                        />
-
-                        <Metric
-                          label="Worst Trade"
-                          value={formatMoney(
-                            Number(
-                              strategy.worst_trade ??
-                                0
-                            ),
-                            true
-                          )}
-                        />
-
-                        <Metric
-                          label="Updated"
-                          value={
-                            strategy.created_at
-                              ? new Date(
-                                  strategy.created_at
-                                ).toLocaleString()
-                              : '—'
-                          }
-                        />
-
-                      </div>
-
                     </div>
-
                   )
                 )}
-
               </div>
-
             </>
-
           ) : (
-
             <EmptyState
               title="No strategy performance yet."
               description="Strategy analytics will appear after ARCGT closes DEMO trades."
             />
-
           )}
-
         </section>
 
         {/* EQUITY CURVE */}
 
         <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
           <div className="flex items-start justify-between gap-4 mb-5">
-
             <div>
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Performance Tracking
               </p>
@@ -2191,11 +2640,9 @@ export default function Home() {
               <h2 className="text-xl font-semibold mt-2">
                 Equity Curve
               </h2>
-
             </div>
 
             <div className="text-right">
-
               <p className="text-xs text-neutral-500">
                 Cumulative P&L
               </p>
@@ -2203,8 +2650,7 @@ export default function Home() {
               <p
                 className={`text-xl font-semibold mt-1 ${
                   Number(
-                    performance?.net_pnl ??
-                      0
+                    performance?.net_pnl ?? 0
                   ) >= 0
                     ? 'text-green-400'
                     : 'text-red-400'
@@ -2212,15 +2658,12 @@ export default function Home() {
               >
                 {formatMoney(
                   Number(
-                    performance?.net_pnl ??
-                      0
+                    performance?.net_pnl ?? 0
                   ),
                   true
                 )}
               </p>
-
             </div>
-
           </div>
 
           {equityCurve.length > 0 ? (
@@ -2233,17 +2676,13 @@ export default function Home() {
               description="The curve will populate as ARCGT closes DEMO trades."
             />
           )}
-
         </section>
 
         {/* TRADE HISTORY */}
 
         <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
           <div className="flex items-center justify-between mb-5">
-
             <div>
-
               <p className="text-xs uppercase tracking-widest text-neutral-500">
                 Trade History
               </p>
@@ -2251,76 +2690,59 @@ export default function Home() {
               <h2 className="text-xl font-semibold mt-2">
                 Closed DEMO Trades
               </h2>
-
             </div>
 
             <span className="text-xs px-3 py-1 rounded bg-neutral-500/10 text-neutral-400">
-              {closedTrades.length}{' '}
-              trades
+              {closedTrades.length} trades
             </span>
-
           </div>
 
           {closedTrades.length > 0 ? (
             <div className="overflow-x-auto">
-
-              <table className="w-full min-w-[1000px] text-sm">
-
+              <table className="w-full min-w-[1250px] text-sm">
                 <thead>
-
                   <tr className="border-b border-[#252525] text-neutral-500 text-left">
-
                     <th className="pb-3 font-medium">
                       Side
                     </th>
-
                     <th className="pb-3 font-medium">
                       Entry
                     </th>
-
                     <th className="pb-3 font-medium">
                       Exit
                     </th>
-
                     <th className="pb-3 font-medium">
                       Lot
                     </th>
-
                     <th className="pb-3 font-medium">
                       SL
                     </th>
-
                     <th className="pb-3 font-medium">
                       TP
                     </th>
-
                     <th className="pb-3 font-medium">
                       Result
                     </th>
-
                     <th className="pb-3 font-medium">
                       Close Reason
                     </th>
-
+                    <th className="pb-3 font-medium">
+                      Management Exit
+                    </th>
                     <th className="pb-3 font-medium">
                       Duration
                     </th>
-
                     <th className="pb-3 font-medium">
                       Closed
                     </th>
-
                   </tr>
-
                 </thead>
 
                 <tbody>
-
                   {closedTrades.map(
                     (trade: any) => {
                       const pnl = Number(
-                        trade.realized_pnl ??
-                          0
+                        trade.realized_pnl ?? 0
                       );
 
                       return (
@@ -2328,9 +2750,7 @@ export default function Home() {
                           key={trade.id}
                           className="border-b border-[#1f1f1f]"
                         >
-
                           <td className="py-4">
-
                             <span
                               className={`font-semibold ${
                                 trade.side ===
@@ -2341,7 +2761,6 @@ export default function Home() {
                             >
                               {trade.side}
                             </span>
-
                           </td>
 
                           <td className="py-4">
@@ -2385,13 +2804,33 @@ export default function Home() {
                           </td>
 
                           <td className="py-4">
-
                             <span className="text-xs px-2 py-1 rounded bg-neutral-500/10 text-neutral-300">
                               {formatReason(
                                 trade.close_reason
                               )}
                             </span>
+                          </td>
 
+                          <td className="py-4">
+                            {trade.management_exit_source ? (
+                              <div>
+                                <p className="text-xs text-yellow-400">
+                                  {formatReason(
+                                    trade.management_exit_source
+                                  )}
+                                </p>
+
+                                <p className="text-[11px] text-neutral-500 mt-1">
+                                  {formatReason(
+                                    trade.management_exit_reason
+                                  )}
+                                </p>
+                              </div>
+                            ) : (
+                              <span className="text-neutral-600">
+                                —
+                              </span>
+                            )}
                           </td>
 
                           <td className="py-4 text-neutral-400">
@@ -2408,16 +2847,12 @@ export default function Home() {
                                 ).toLocaleString()
                               : '—'}
                           </td>
-
                         </tr>
                       );
                     }
                   )}
-
                 </tbody>
-
               </table>
-
             </div>
           ) : (
             <EmptyState
@@ -2425,15 +2860,12 @@ export default function Home() {
               description="Closed ARCGT DEMO trades will appear here automatically."
             />
           )}
-
         </section>
 
         {/* NEWS + HEALTH */}
 
         <section className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-
           <div className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
             <p className="text-xs uppercase tracking-widest text-neutral-500">
               Upcoming News
             </p>
@@ -2443,7 +2875,6 @@ export default function Home() {
             </h2>
 
             <div className="space-y-3">
-
               {news?.upcoming?.length ? (
                 news.upcoming.map(
                   (
@@ -2454,11 +2885,8 @@ export default function Home() {
                       key={index}
                       className="border border-[#262626] rounded-lg p-4"
                     >
-
                       <div className="flex justify-between gap-4">
-
                         <div>
-
                           <p className="font-medium">
                             {
                               event.event_name
@@ -2470,15 +2898,12 @@ export default function Home() {
                               event.event_time
                             ).toLocaleString()}
                           </p>
-
                         </div>
 
                         <span className="text-xs px-2 py-1 rounded bg-red-500/10 text-red-400 h-fit">
                           {event.impact}
                         </span>
-
                       </div>
-
                     </div>
                   )
                 )
@@ -2488,13 +2913,10 @@ export default function Home() {
                   high-impact events.
                 </p>
               )}
-
             </div>
-
           </div>
 
           <div className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
             <p className="text-xs uppercase tracking-widest text-neutral-500">
               System Health
             </p>
@@ -2504,7 +2926,6 @@ export default function Home() {
             </h2>
 
             <div className="space-y-3">
-
               {health?.components &&
                 Object.entries(
                   health.components
@@ -2516,7 +2937,6 @@ export default function Home() {
                       key={name}
                       className="flex justify-between items-center border-b border-[#222] pb-3"
                     >
-
                       <span className="capitalize text-sm">
                         {name.replaceAll(
                           '_',
@@ -2537,132 +2957,17 @@ export default function Home() {
                       >
                         {component.status}
                       </span>
-
                     </div>
                   )
                 )}
-
             </div>
-
           </div>
-
-        </section>
-
-        {/* POSITION MONITOR */}
-
-        <section className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
-          <div className="flex items-center justify-between mb-5">
-
-            <div>
-
-              <p className="text-xs uppercase tracking-widest text-neutral-500">
-                Position Monitor
-              </p>
-
-              <h2 className="text-xl font-semibold mt-2">
-                Current DEMO Position
-              </h2>
-
-            </div>
-
-            <span
-              className={
-                data?.open_position
-                  ? 'text-xs px-3 py-1 rounded bg-green-500/10 text-green-400'
-                  : 'text-xs px-3 py-1 rounded bg-neutral-500/10 text-neutral-400'
-              }
-            >
-              {data?.open_position
-                ? 'OPEN'
-                : 'NO POSITION'}
-            </span>
-
-          </div>
-
-          {data?.open_position ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
-
-              <Metric
-                label="Side"
-                value={
-                  data.open_position.side
-                }
-              />
-
-              <Metric
-                label="Lot Size"
-                value={
-                  data.open_position
-                    .lot_size
-                }
-              />
-
-              <Metric
-                label="Entry"
-                value={
-                  data.open_position
-                    .entry_price
-                }
-              />
-
-              <Metric
-                label="Stop Loss"
-                value={
-                  data.open_position
-                    .stop_loss
-                }
-              />
-
-              <Metric
-                label="Take Profit"
-                value={
-                  data.open_position
-                    .take_profit
-                }
-              />
-
-              <Metric
-                label="Unrealized P&L"
-                value={formatMoney(
-                  Number(
-                    data.open_position
-                      .unrealized_pnl ??
-                      0
-                  ),
-                  true
-                )}
-              />
-
-              <Metric
-                label="Opened"
-                value={
-                  data.open_position
-                    .opened_at
-                    ? new Date(
-                        data.open_position
-                          .opened_at
-                      ).toLocaleString()
-                    : '—'
-                }
-              />
-
-            </div>
-          ) : (
-            <EmptyState
-              title="No active DEMO position."
-              description="ARCGT is waiting for an approved BUY or SELL setup."
-            />
-          )}
-
         </section>
 
         {/* SIGNAL + RISK HISTORY */}
 
         <section className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-
           <div className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
             <p className="text-xs uppercase tracking-widest text-neutral-500">
               Recent Signals
             </p>
@@ -2672,7 +2977,6 @@ export default function Home() {
             </h2>
 
             <div className="space-y-3">
-
               {data?.recent_signals?.length ? (
                 data.recent_signals
                   .slice(0, 6)
@@ -2686,13 +2990,9 @@ export default function Home() {
                         }
                         className="border border-[#262626] rounded-lg p-4"
                       >
-
                         <div className="flex items-start justify-between gap-4">
-
                           <div>
-
                             <div className="flex items-center gap-3">
-
                               <span className="text-lg font-semibold">
                                 {
                                   recentSignal.decision
@@ -2704,7 +3004,6 @@ export default function Home() {
                                   0}
                                 % confidence
                               </span>
-
                             </div>
 
                             <p className="text-sm text-neutral-400 mt-1">
@@ -2716,7 +3015,6 @@ export default function Home() {
                               {recentSignal.market_condition ??
                                 'Unknown market'}
                             </p>
-
                           </div>
 
                           <span className="text-xs text-neutral-500 whitespace-nowrap">
@@ -2726,9 +3024,7 @@ export default function Home() {
                                 ).toLocaleString()
                               : '—'}
                           </span>
-
                         </div>
-
                       </div>
                     )
                   )
@@ -2737,13 +3033,10 @@ export default function Home() {
                   No recent signals.
                 </p>
               )}
-
             </div>
-
           </div>
 
           <div className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
             <p className="text-xs uppercase tracking-widest text-neutral-500">
               Risk Decisions
             </p>
@@ -2753,8 +3046,8 @@ export default function Home() {
             </h2>
 
             <div className="space-y-3">
-
-              {data?.recent_risk_decisions
+              {data
+                ?.recent_risk_decisions
                 ?.length ? (
                 data.recent_risk_decisions
                   .slice(0, 6)
@@ -2763,13 +3056,9 @@ export default function Home() {
                       key={risk.id}
                       className="border border-[#262626] rounded-lg p-4"
                     >
-
                       <div className="flex items-start justify-between gap-4">
-
                         <div>
-
                           <div className="flex items-center gap-3">
-
                             <span className="font-semibold">
                               {risk.decision ??
                                 '—'}
@@ -2786,7 +3075,6 @@ export default function Home() {
                                 ? 'APPROVED'
                                 : 'REJECTED'}
                             </span>
-
                           </div>
 
                           <p className="text-xs text-neutral-500 mt-2">
@@ -2823,7 +3111,6 @@ export default function Home() {
                               }
                             </p>
                           )}
-
                         </div>
 
                         <span className="text-xs text-neutral-500 whitespace-nowrap">
@@ -2833,9 +3120,7 @@ export default function Home() {
                               ).toLocaleString()
                             : '—'}
                         </span>
-
                       </div>
-
                     </div>
                   ))
               ) : (
@@ -2843,17 +3128,15 @@ export default function Home() {
                   No recent risk decisions.
                 </p>
               )}
-
             </div>
-
           </div>
-
         </section>
-
       </div>
     </main>
   );
 }
+
+/* COMPONENTS */
 
 function Card({
   title,
@@ -2866,7 +3149,6 @@ function Card({
 }) {
   return (
     <div className="bg-[#101010] border border-[#252525] rounded-xl p-5">
-
       <p className="text-xs uppercase tracking-widest text-neutral-500">
         {title}
       </p>
@@ -2880,7 +3162,6 @@ function Card({
           {sub}
         </p>
       )}
-
     </div>
   );
 }
@@ -2894,7 +3175,6 @@ function Metric({
 }) {
   return (
     <div className="bg-[#0a0a0a] rounded-lg p-4 border border-[#222]">
-
       <p className="text-xs text-neutral-500">
         {label}
       </p>
@@ -2902,7 +3182,47 @@ function Metric({
       <p className="text-sm font-medium mt-1 break-words">
         {value}
       </p>
+    </div>
+  );
+}
 
+function BooleanMetric({
+  label,
+  value,
+  invertGood = false,
+}: {
+  label: string;
+  value: boolean | null;
+  invertGood?: boolean;
+}) {
+  const good =
+    value == null
+      ? null
+      : invertGood
+      ? !value
+      : value;
+
+  return (
+    <div className="bg-[#0a0a0a] rounded-lg p-4 border border-[#222]">
+      <p className="text-xs text-neutral-500">
+        {label}
+      </p>
+
+      <p
+        className={`text-sm font-semibold mt-1 ${
+          good == null
+            ? 'text-neutral-400'
+            : good
+            ? 'text-green-400'
+            : 'text-yellow-400'
+        }`}
+      >
+        {value == null
+          ? 'UNAVAILABLE'
+          : value
+          ? 'YES'
+          : 'NO'}
+      </p>
     </div>
   );
 }
@@ -2920,14 +3240,13 @@ function ControlRow({
     | 'danger';
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-[#222] pb-3">
-
+    <div className="flex items-center justify-between border-b border-[#222] pb-3 gap-4">
       <span className="text-sm text-neutral-400">
         {label}
       </span>
 
       <span
-        className={`text-xs font-semibold ${
+        className={`text-xs font-semibold text-right ${
           status === 'good'
             ? 'text-green-400'
             : status === 'warning'
@@ -2939,7 +3258,6 @@ function ControlRow({
       >
         {value}
       </span>
-
     </div>
   );
 }
@@ -2976,13 +3294,11 @@ function EditableRiskMetric({
 
   return (
     <div className="bg-[#111] border border-[#252525] rounded-lg p-4">
-
       <p className="text-xs text-neutral-500">
         {label}
       </p>
 
       <div className="flex items-center gap-1 mt-2">
-
         {prefix && (
           <span className="text-sm text-neutral-400">
             {prefix}
@@ -3011,7 +3327,6 @@ function EditableRiskMetric({
             {suffix}
           </span>
         )}
-
       </div>
 
       <button
@@ -3029,7 +3344,6 @@ function EditableRiskMetric({
       >
         Save
       </button>
-
     </div>
   );
 }
@@ -3045,17 +3359,16 @@ function Timeframe({
     String(value ?? '').toLowerCase();
 
   const statusClass =
-    normalized === 'bullish'
+    normalized.includes('bullish')
       ? 'text-green-400'
-      : normalized === 'bearish'
+      : normalized.includes('bearish')
       ? 'text-red-400'
-      : normalized === 'waiting'
+      : normalized.includes('waiting')
       ? 'text-yellow-400'
       : 'text-neutral-400';
 
   return (
     <div className="flex justify-between items-center bg-[#0a0a0a] border border-[#222] rounded-lg p-4">
-
       <span className="font-semibold">
         {label}
       </span>
@@ -3063,9 +3376,10 @@ function Timeframe({
       <span
         className={`text-sm ${statusClass}`}
       >
-        {value ?? 'UNAVAILABLE'}
+        {value
+          ? formatReason(String(value))
+          : 'UNAVAILABLE'}
       </span>
-
     </div>
   );
 }
@@ -3089,7 +3403,6 @@ function AnalyticsCard({
 
   return (
     <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-5">
-
       <p className="text-xs uppercase tracking-widest text-neutral-500">
         {label}
       </p>
@@ -3109,7 +3422,6 @@ function AnalyticsCard({
       <p className="text-xs text-neutral-500 mt-1">
         {sub}
       </p>
-
     </div>
   );
 }
@@ -3119,7 +3431,6 @@ function SidePerformance({
   data,
 }: {
   side: 'BUY' | 'SELL';
-
   data:
     | {
         trades: number;
@@ -3135,11 +3446,8 @@ function SidePerformance({
 
   return (
     <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-5">
-
       <div className="flex items-center justify-between">
-
         <div>
-
           <p className="text-xs uppercase tracking-widest text-neutral-500">
             Direction Performance
           </p>
@@ -3153,18 +3461,14 @@ function SidePerformance({
           >
             {side}
           </h3>
-
         </div>
 
         <span className="text-xs px-3 py-1 rounded bg-neutral-500/10 text-neutral-400">
-          {data?.trades ?? 0}{' '}
-          trades
+          {data?.trades ?? 0} trades
         </span>
-
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-5">
-
         <Metric
           label="Win Rate"
           value={`${data?.win_rate ?? 0}%`}
@@ -3187,10 +3491,161 @@ function SidePerformance({
           label="Losses"
           value={data?.losses ?? 0}
         />
+      </div>
+    </div>
+  );
+}
 
+function TechnicalObjectCard({
+  title,
+  heading,
+  value,
+}: {
+  title: string;
+  heading: string;
+  value: any;
+}) {
+  return (
+    <div className="bg-[#0a0a0a] border border-[#222] rounded-xl p-5">
+      <p className="text-xs uppercase tracking-widest text-neutral-500">
+        {title}
+      </p>
+
+      <h3 className="text-lg font-semibold mt-2 mb-4">
+        {heading}
+      </h3>
+
+      {value ? (
+        typeof value === 'object' ? (
+          <div className="space-y-3">
+            {Object.entries(value)
+              .slice(0, 8)
+              .map(
+                ([key, objectValue]) => (
+                  <ControlRow
+                    key={key}
+                    label={formatReason(
+                      key
+                    )}
+                    value={formatTechnicalValue(
+                      objectValue
+                    )}
+                  />
+                )
+              )}
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-300">
+            {formatTechnicalValue(
+              value
+            )}
+          </p>
+        )
+      ) : (
+        <p className="text-sm text-neutral-500">
+          No active structure detected.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function DurationBadge({
+  stage,
+}: {
+  stage: string;
+}) {
+  let className =
+    'bg-green-500/10 text-green-400 border-green-500/20';
+
+  if (
+    stage ===
+    'REASSESSMENT_WINDOW'
+  ) {
+    className =
+      'bg-yellow-500/10 text-yellow-400 border-yellow-500/20';
+  }
+
+  if (stage === 'TIME_LIMIT') {
+    className =
+      'bg-red-500/10 text-red-400 border-red-500/20';
+  }
+
+  return (
+    <span
+      className={`text-xs px-3 py-1.5 rounded border ${className}`}
+    >
+      {formatReason(stage)}
+    </span>
+  );
+}
+
+function DurationProgress({
+  minutes,
+}: {
+  minutes: number;
+}) {
+  const percentage =
+    Math.min(
+      100,
+      Math.max(
+        0,
+        (minutes / 60) * 100
+      )
+    );
+
+  const barClass =
+    minutes >= 60
+      ? 'bg-red-500'
+      : minutes >= 30
+      ? 'bg-yellow-500'
+      : 'bg-green-500';
+
+  return (
+    <div className="mt-5">
+      <div className="flex justify-between text-[11px] text-neutral-500 mb-2">
+        <span>0m</span>
+        <span>30m Reassessment</span>
+        <span>60m Limit</span>
       </div>
 
+      <div className="relative w-full bg-[#202020] rounded-full h-3 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${barClass}`}
+          style={{
+            width: `${percentage}%`,
+          }}
+        />
+
+        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/30" />
+      </div>
     </div>
+  );
+}
+
+function StatusBadge({
+  value,
+}: {
+  value: string;
+}) {
+  const normalized =
+    String(value).toUpperCase();
+
+  const className =
+    normalized.includes('TREND')
+      ? 'bg-green-500/10 text-green-400 border-green-500/20'
+      : normalized.includes(
+          'TRANSITION'
+        )
+      ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+      : 'bg-neutral-500/10 text-neutral-400 border-[#333]';
+
+  return (
+    <span
+      className={`text-xs px-3 py-1.5 rounded border ${className}`}
+    >
+      {formatReason(value)}
+    </span>
   );
 }
 
@@ -3258,9 +3713,7 @@ function ReadinessMetric({
 
   return (
     <div className="bg-[#0a0a0a] border border-[#222] rounded-lg p-4">
-
       <div className="flex justify-between items-center gap-3">
-
         <p className="text-xs text-neutral-500">
           {label}
         </p>
@@ -3268,20 +3721,16 @@ function ReadinessMetric({
         <span className="text-sm font-semibold">
           {score}/{max}
         </span>
-
       </div>
 
       <div className="w-full bg-[#222] h-1.5 rounded-full overflow-hidden mt-3">
-
         <div
           className="h-full bg-yellow-500 rounded-full transition-all duration-500"
           style={{
             width: `${percentage}%`,
           }}
         />
-
       </div>
-
     </div>
   );
 }
@@ -3295,7 +3744,6 @@ function MiniMetric({
 }) {
   return (
     <div className="border border-[#222] rounded-lg p-3">
-
       <p className="text-[11px] text-neutral-500">
         {label}
       </p>
@@ -3303,7 +3751,6 @@ function MiniMetric({
       <p className="text-sm font-semibold mt-1">
         {value}
       </p>
-
     </div>
   );
 }
@@ -3335,14 +3782,12 @@ function ProgressBar({
 
   return (
     <div className="w-full bg-[#202020] rounded-full h-3 mt-5 overflow-hidden">
-
       <div
         className={`h-full rounded-full transition-all duration-500 ${barClass}`}
         style={{
           width: `${percentage}%`,
         }}
       />
-
     </div>
   );
 }
@@ -3356,7 +3801,6 @@ function EmptyState({
 }) {
   return (
     <div className="border border-[#222] rounded-lg p-8 text-center">
-
       <p className="text-neutral-400">
         {title}
       </p>
@@ -3364,7 +3808,6 @@ function EmptyState({
       <p className="text-xs text-neutral-600 mt-2">
         {description}
       </p>
-
     </div>
   );
 }
@@ -3391,8 +3834,7 @@ function EquityCurveChart({
     const values = data.map(
       point =>
         Number(
-          point.cumulative_pnl ??
-            0
+          point.cumulative_pnl ?? 0
         )
     );
 
@@ -3429,8 +3871,7 @@ function EquityCurveChart({
 
         const normalized =
           (Number(
-            point.cumulative_pnl ??
-              0
+            point.cumulative_pnl ?? 0
           ) -
             min) /
           (max - min);
@@ -3486,15 +3927,12 @@ function EquityCurveChart({
 
   return (
     <div className="w-full">
-
       <div className="h-[300px] w-full border border-[#222] rounded-lg bg-[#0a0a0a] p-3">
-
         <svg
           viewBox={`0 0 ${chart.width} ${chart.height}`}
           className="w-full h-full"
           preserveAspectRatio="none"
         >
-
           <line
             x1={chart.paddingX}
             y1={chart.zeroY}
@@ -3521,7 +3959,6 @@ function EquityCurveChart({
           {chart.points.map(
             (point, index) => (
               <g key={index}>
-
                 <circle
                   cx={point.x}
                   cy={point.y}
@@ -3550,17 +3987,13 @@ function EquityCurveChart({
                     true
                   )}
                 </text>
-
               </g>
             )
           )}
-
         </svg>
-
       </div>
 
       <div className="flex justify-between text-xs text-neutral-600 mt-3">
-
         <span>
           {data[0]?.timestamp
             ? new Date(
@@ -3579,11 +4012,106 @@ function EquityCurveChart({
               ).toLocaleString()
             : 'Latest'}
         </span>
-
       </div>
-
     </div>
   );
+}
+
+/* FORMATTERS */
+
+function firstDefined(
+  ...values: any[]
+) {
+  for (const value of values) {
+    if (
+      value !== undefined &&
+      value !== null
+    ) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function booleanOrNull(
+  value: any
+): boolean | null {
+  if (value === true) return true;
+  if (value === false) return false;
+
+  if (
+    String(value).toLowerCase() ===
+    'true'
+  ) {
+    return true;
+  }
+
+  if (
+    String(value).toLowerCase() ===
+    'false'
+  ) {
+    return false;
+  }
+
+  return null;
+}
+
+function formatTechnicalValue(
+  value: any
+) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return '—';
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'YES' : 'NO';
+  }
+
+  if (typeof value === 'number') {
+    return Number.isInteger(value)
+      ? String(value)
+      : value.toFixed(2);
+  }
+
+  if (typeof value === 'string') {
+    return formatReason(value);
+  }
+
+  if (Array.isArray(value)) {
+    if (!value.length) return 'NONE';
+
+    return value
+      .map(item =>
+        typeof item === 'object'
+          ? JSON.stringify(item)
+          : String(item)
+      )
+      .join(', ');
+  }
+
+  if (typeof value === 'object') {
+    const summary =
+      value.summary ??
+      value.state ??
+      value.status ??
+      value.direction ??
+      value.type ??
+      value.zone;
+
+    if (summary != null) {
+      return formatReason(
+        String(summary)
+      );
+    }
+
+    return JSON.stringify(value);
+  }
+
+  return String(value);
 }
 
 function formatMoney(
@@ -3612,9 +4140,33 @@ function formatReason(
     return 'UNKNOWN';
   }
 
-  return value
+  return String(value)
     .replaceAll('_', ' ')
     .toUpperCase();
+}
+
+function formatMinutes(
+  totalMinutes: number
+) {
+  const safeMinutes =
+    Math.max(
+      0,
+      Math.floor(totalMinutes)
+    );
+
+  const hours =
+    Math.floor(
+      safeMinutes / 60
+    );
+
+  const minutes =
+    safeMinutes % 60;
+
+  if (hours === 0) {
+    return `${minutes}m`;
+  }
+
+  return `${hours}h ${minutes}m`;
 }
 
 function formatDuration(
@@ -3646,19 +4198,9 @@ function formatDuration(
       difference / 60000
     );
 
-  const hours =
-    Math.floor(
-      totalMinutes / 60
-    );
-
-  const minutes =
-    totalMinutes % 60;
-
-  if (hours === 0) {
-    return `${minutes}m`;
-  }
-
-  return `${hours}h ${minutes}m`;
+  return formatMinutes(
+    totalMinutes
+  );
 }
 
 function formatStrategyName(
@@ -3668,7 +4210,7 @@ function formatStrategyName(
     return 'Unknown';
   }
 
-  return value
+  return String(value)
     .replaceAll('_', ' ')
     .replace(
       /\b\w/g,

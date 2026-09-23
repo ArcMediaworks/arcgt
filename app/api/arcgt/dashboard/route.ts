@@ -33,7 +33,6 @@ export async function GET() {
       signalsResult,
       riskResult,
       closedTradesResult,
-
     ] = await Promise.all([
       // Latest dashboard snapshot
       arcgtSupabase
@@ -133,8 +132,6 @@ export async function GET() {
         .order('closed_at', {
           ascending: true,
         }),
-
-
     ]);
 
     const errors = [
@@ -147,7 +144,6 @@ export async function GET() {
       signalsResult.error,
       riskResult.error,
       closedTradesResult.error,
-
     ]
       .filter(Boolean)
       .map(
@@ -160,7 +156,9 @@ export async function GET() {
       closedTradesResult.data ?? [];
 
     /*
+     * ==================================================
      * DEMO READINESS
+     * ==================================================
      *
      * Authoritative source:
      * open_positions
@@ -192,7 +190,9 @@ export async function GET() {
 
     const readinessWinRate =
       readinessTotalTrades > 0
-        ? (readinessWins / readinessTotalTrades) * 100
+        ? (readinessWins /
+            readinessTotalTrades) *
+          100
         : 0;
 
     const readinessNetPnl =
@@ -251,12 +251,17 @@ export async function GET() {
     for (const pnl of demoPnls) {
       readinessCumulative += pnl;
 
-      if (readinessCumulative > readinessPeak) {
-        readinessPeak = readinessCumulative;
+      if (
+        readinessCumulative >
+        readinessPeak
+      ) {
+        readinessPeak =
+          readinessCumulative;
       }
 
       const drawdown =
-        readinessPeak - readinessCumulative;
+        readinessPeak -
+        readinessCumulative;
 
       if (
         drawdown >
@@ -282,7 +287,9 @@ export async function GET() {
     }
 
     /*
+     * ==================================================
      * READINESS SCORE
+     * ==================================================
      *
      * Trade Count:    30 points
      * Profitability:  30 points
@@ -486,9 +493,11 @@ export async function GET() {
         readinessReasons,
     };
 
-    // ==================================================
-    // ACTUAL BROKER ACCOUNT
-    // ==================================================
+    /*
+     * ==================================================
+     * ACTUAL BROKER ACCOUNT
+     * ==================================================
+     */
 
     const brokerRow =
       brokerAccountResult.data;
@@ -506,8 +515,11 @@ export async function GET() {
         : Number.NaN;
 
     const brokerAgeMs =
-      Number.isFinite(brokerUpdatedMs)
-        ? Date.now() - brokerUpdatedMs
+      Number.isFinite(
+        brokerUpdatedMs
+      )
+        ? Date.now() -
+          brokerUpdatedMs
         : null;
 
     const brokerFresh =
@@ -520,8 +532,10 @@ export async function GET() {
       brokerRow?.connected === true;
 
     const brokerAuthorized =
-      brokerRow?.app_authorized === true &&
-      brokerRow?.account_authorized === true;
+      brokerRow?.app_authorized ===
+        true &&
+      brokerRow?.account_authorized ===
+        true;
 
     const brokerSourceAvailable =
       brokerRow?.available === true;
@@ -647,60 +661,234 @@ export async function GET() {
         brokerUpdatedAt,
     };
 
-    // ==================================================
-    // CURRENT DEMO POSITION
-    // ==================================================
+    /*
+     * ==================================================
+     * CURRENT DEMO POSITION + TRADE DURATION MANAGER
+     * ==================================================
+     *
+     * n8n remains authoritative for ACTUAL position
+     * management and broker closing.
+     *
+     * This API derives the current management stage for
+     * dashboard visibility and exposes the persisted
+     * management_exit_* fields written by n8n.
+     */
 
     const rawOpenPosition =
       positionResult.data ?? null;
 
-    // There is currently a maximum of one DEMO position.
-    // Attach the actual broker floating P&L to that position.
     const openPosition =
       rawOpenPosition
-        ? {
-            ...rawOpenPosition,
+        ? (() => {
+            const openedAt =
+              rawOpenPosition.opened_at
+                ? new Date(
+                    rawOpenPosition.opened_at
+                  ).getTime()
+                : Number.NaN;
 
-            unrealized_pnl:
-              brokerUnrealizedPnl,
-          }
+            const now =
+              Date.now();
+
+            const durationMinutes =
+              Number.isFinite(openedAt)
+                ? Math.max(
+                    0,
+                    Math.floor(
+                      (now -
+                        openedAt) /
+                        60_000
+                    )
+                  )
+                : null;
+
+            let managementStage =
+              'UNKNOWN';
+
+            let managementAction =
+              'UNKNOWN';
+
+            let nextManagementEvent:
+              string | null = null;
+
+            let minutesUntilNextStage:
+              number | null = null;
+
+            if (
+              durationMinutes !== null
+            ) {
+              if (
+                durationMinutes < 30
+              ) {
+                managementStage =
+                  'NORMAL';
+
+                managementAction =
+                  'MONITOR';
+
+                nextManagementEvent =
+                  'AI_REASSESSMENT_WINDOW';
+
+                minutesUntilNextStage =
+                  30 -
+                  durationMinutes;
+              } else if (
+                durationMinutes < 60
+              ) {
+                managementStage =
+                  'REASSESSMENT_WINDOW';
+
+                managementAction =
+                  'AI_MANAGED';
+
+                nextManagementEvent =
+                  'MAX_TIME_EXIT';
+
+                minutesUntilNextStage =
+                  60 -
+                  durationMinutes;
+              } else {
+                managementStage =
+                  'TIME_LIMIT';
+
+                managementAction =
+                  rawOpenPosition
+                    .management_exit_pending ===
+                  true
+                    ? 'EXIT_PENDING'
+                    : 'EXIT_EXPECTED';
+
+                nextManagementEvent =
+                  null;
+
+                minutesUntilNextStage =
+                  0;
+              }
+            }
+
+            if (
+              rawOpenPosition
+                .management_exit_pending ===
+              true
+            ) {
+              managementAction =
+                'EXIT_PENDING';
+            }
+
+            return {
+              ...rawOpenPosition,
+
+              // Actual broker floating P&L
+              unrealized_pnl:
+                brokerUnrealizedPnl,
+
+              // Dashboard representation of the
+              // existing n8n Trade Duration Manager.
+              trade_management: {
+                enabled: true,
+
+                policy:
+                  '30_60_MINUTE_MANAGER',
+
+                duration_minutes:
+                  durationMinutes,
+
+                stage:
+                  managementStage,
+
+                action:
+                  managementAction,
+
+                reassessment_window:
+                  durationMinutes !==
+                    null &&
+                  durationMinutes >= 30 &&
+                  durationMinutes < 60,
+
+                hard_time_limit_reached:
+                  durationMinutes !==
+                    null &&
+                  durationMinutes >= 60,
+
+                next_event:
+                  nextManagementEvent,
+
+                minutes_until_next_stage:
+                  minutesUntilNextStage,
+
+                exit_pending:
+                  rawOpenPosition
+                    .management_exit_pending ===
+                  true,
+
+                exit_source:
+                  rawOpenPosition
+                    .management_exit_source ??
+                  null,
+
+                exit_reason:
+                  rawOpenPosition
+                    .management_exit_reason ??
+                  null,
+
+                exit_at:
+                  rawOpenPosition
+                    .management_exit_at ??
+                  null,
+
+                exit_data:
+                  rawOpenPosition
+                    .management_exit_data ??
+                  null,
+              },
+            };
+          })()
         : null;
 
-    // ==================================================
-    // DEMO EQUITY / REALIZED P&L CURVE
-    // ==================================================
+    /*
+     * ==================================================
+     * DEMO EQUITY / REALIZED P&L CURVE
+     * ==================================================
+     */
 
     let cumulativePnl = 0;
 
     const equityCurve =
-      closedTrades.map((trade) => {
-        const realizedPnl =
-          Number(
-            trade.realized_pnl ?? 0
-          );
-
-        cumulativePnl +=
-          realizedPnl;
-
-        return {
-          timestamp:
-            trade.closed_at ??
-            trade.settled_at ??
-            null,
-
-          realized_pnl:
-            realizedPnl,
-
-          cumulative_pnl:
+      closedTrades.map(
+        (trade: any) => {
+          const realizedPnl =
             Number(
-              cumulativePnl.toFixed(2)
-            ),
-        };
-      });
+              trade.realized_pnl ??
+                0
+            );
 
-    // ==================================================
-    // DEMO CLOSED-TRADE SUMMARY
-    // ==================================================
+          cumulativePnl +=
+            realizedPnl;
+
+          return {
+            timestamp:
+              trade.closed_at ??
+              trade.settled_at ??
+              null,
+
+            realized_pnl:
+              realizedPnl,
+
+            cumulative_pnl:
+              Number(
+                cumulativePnl.toFixed(
+                  2
+                )
+              ),
+          };
+        }
+      );
+
+    /*
+     * ==================================================
+     * DEMO CLOSED-TRADE SUMMARY
+     * ==================================================
+     */
 
     const demoNetPnl =
       Number(
@@ -712,17 +900,19 @@ export async function GET() {
 
     const demoWinningTrades =
       closedTrades.filter(
-        (trade) =>
+        (trade: any) =>
           Number(
-            trade.realized_pnl ?? 0
+            trade.realized_pnl ??
+              0
           ) > 0
       ).length;
 
     const demoLosingTrades =
       closedTrades.filter(
-        (trade) =>
+        (trade: any) =>
           Number(
-            trade.realized_pnl ?? 0
+            trade.realized_pnl ??
+              0
           ) < 0
       ).length;
 
@@ -770,6 +960,12 @@ export async function GET() {
         demoAverageTrade,
     };
 
+    /*
+     * ==================================================
+     * RESPONSE
+     * ==================================================
+     */
+
     return NextResponse.json({
       success:
         errors.length === 0,
@@ -792,17 +988,18 @@ export async function GET() {
       broker_account:
         brokerAccount,
 
-      // Current DEMO position with broker floating P&L
+      // Current DEMO position with broker P&L
+      // and Trade Duration Manager state.
       open_position:
         openPosition,
 
       // Legacy snapshot retained for compatibility.
-      // Do not treat it as authoritative DEMO performance.
+      // Do not treat as authoritative DEMO performance.
       performance:
         performanceResult.data ??
         null,
 
-      // Authoritative closed DEMO trade statistics.
+      // Authoritative closed DEMO statistics.
       demo_performance:
         demoPerformance,
 
@@ -880,12 +1077,15 @@ export async function GET() {
         open_position: null,
 
         performance: null,
+
         demo_performance: {
           mode: 'DEMO',
           source: 'open_positions',
+
           total_trades: 0,
           winning_trades: 0,
           losing_trades: 0,
+
           win_rate: 0,
           net_pnl: 0,
           average_trade: 0,
